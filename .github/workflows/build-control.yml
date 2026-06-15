@@ -1,0 +1,274 @@
+name: Build yy_control (Linux AppImage + Windows exe)
+
+on:
+  push:
+    tags:
+      - 'release-*'
+      - 'test-*'
+      - 'release-linux-*'
+      - 'test-linux-*'
+      - 'release-win-*'
+      - 'test-win-*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (for artifact naming)'
+        required: false
+        default: 'manual'
+
+env:
+  # All sensitive values live in repository Secrets:
+  #   SOURCE_GIT_HOST   - source code git host (e.g. example.com)
+  #   SOURCE_REPO       - <owner>/<name> path on that host
+  #   SOURCE_BRANCH     - branch to checkout
+  #   SOURCE_USERNAME   - basic-auth username
+  #   SOURCE_TOKEN      - basic-auth token / PAT
+  #   YY_SERVER_URL     - product backend host
+  #   YY_KEY            - product key (base64)
+
+jobs:
+  # ============================================================
+  # Linux — AppImage
+  # 依赖 apt 系统包 + pkg-config (不依赖 vcpkg)
+  # ============================================================
+  build-linux:
+    name: Linux AppImage (x86_64)
+    if: ${{ !startsWith(github.ref_name, 'release-win-') && !startsWith(github.ref_name, 'test-win-') }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Clone source
+        run: |
+          git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
+            "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" .
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libgtk-3-dev libxdo-dev libva-dev libxcb-randr0-dev \
+            libpulse-dev libgstreamer-plugins-base1.0-dev \
+            libxfixes-dev libxtst-dev libxkbcommon-dev \
+            libpam0g-dev libsodium-dev nasm \
+            curl wget file imagemagick
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '120deac3062162151622ca4860575a33844ba10b'
+          doNotCache: false
+
+      - name: Install vcpkg deps (Linux)
+        run: |
+          # Manifest mode would install to ./vcpkg_installed/ by default.
+          # magnum-opus build.rs expects $VCPKG_ROOT/installed/, so override.
+          $VCPKG_ROOT/vcpkg install --triplet x64-linux \
+            --x-install-root="$VCPKG_ROOT/installed"
+          echo "--- vcpkg installed tree ---"
+          ls -la "$VCPKG_ROOT/installed/x64-linux/include/opus" || \
+            (echo "ERROR: opus headers missing"; \
+             find "$VCPKG_ROOT/installed" -name "opus_multistream.h" 2>/dev/null; \
+             exit 1)
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Fetch dependencies (for magnum-opus patching)
+        run: cargo fetch
+
+      - name: Fix magnum-opus build.rs (opus header path include both flat and subdir)
+        run: python3 scripts/fix-magnum-opus.py
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.5'
+
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Build Rust CDYLIB
+        run: |
+          cargo build --lib --release \
+            --features flutter,yy_control,unix-file-copy-paste
+        env:
+          YY_SERVER_URL: ${{ secrets.YY_SERVER_URL }}
+          YY_KEY: ${{ secrets.YY_KEY }}
+
+      - name: Build Flutter Linux
+        run: |
+          cd flutter
+          flutter build linux --release
+        env:
+          LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/12
+
+      - name: Download appimagetool
+        run: |
+          curl -sL \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -o /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+
+      - name: Package AppImage
+        run: |
+          APPDIR=$(mktemp -d)
+          BUNDLE="flutter/build/linux/x64/release/bundle"
+          mkdir -p "$APPDIR/usr/lib/yy_control"
+          cp -r "$BUNDLE"/* "$APPDIR/usr/lib/yy_control/"
+
+          mkdir -p "$APPDIR/usr/lib/x86_64-linux-gnu"
+          for lib in \
+            libgtk-3.so.0 libgdk-3.so.0 libglib-2.0.so.0 libgobject-2.0.so.0 \
+            libgio-2.0.so.0 libpangocairo-1.0.so.0 libpango-1.0.so.0 \
+            libcairo.so.2 libcairo-gobject.so.2 libgdk_pixbuf-2.0.so.0 \
+            libatk-1.0.so.0 libatk-bridge-2.0.so.0 libatspi.so.0 \
+            libharfbuzz.so.0 libfreetype.so.6 libfontconfig.so.1 \
+            libX11.so.6 libXfixes.so.3 libxcb.so.1 libxcb-shm.so.0 \
+            libxcb-randr.so.0 libxcb-xfixes.so.0 libxcb-shape.so.0 \
+            libXdamage.so.1 libXcomposite.so.1 libXrender.so.1 \
+            libXext.so.6 libXcursor.so.1 libXi.so.6 libXtst.so.6 \
+            libXrandr.so.2 libXinerama.so.1 libxkbcommon.so.0 \
+            libdl.so.2 libpthread.so.0 libstdc++.so.6 libm.so.6 libc.so.6 \
+            librt.so.1 libpcre2-8.so.0 libffi.so.8 libpixman-1.so.0 \
+            libepoxy.so.0 libfribidi.so.0 libpng16.so.16 libexpat.so.1 \
+            libuuid.so.1 libbz2.so.1.0 libEGL.so.1 libGL.so.1 \
+            libdrm.so.2 libgbm.so.1 libgcc_s.so.1 \
+            libwayland-client.so.0 libwayland-cursor.so.0 \
+            libwayland-egl.so.1 libwayland-server.so.0 \
+            libgstreamer-1.0.so.0 libgstvideo-1.0.so.0 libgstbase-1.0.so.0 \
+            libgstpbutils-1.0.so.0 libgstaudio-1.0.so.0 libgsttag-1.0.so.0 \
+            libgmodule-2.0.so.0 libgstapp-1.0.so.0 libgstriff-1.0.so.0 \
+            liborc-0.4.so.0 libpulse.so.0 libpulse-simple.so.0; do
+            cp -L "/lib/x86_64-linux-gnu/$lib" "$APPDIR/usr/lib/x86_64-linux-gnu/" 2>/dev/null || true
+            cp -L "/usr/lib/x86_64-linux-gnu/$lib" "$APPDIR/usr/lib/x86_64-linux-gnu/" 2>/dev/null || true
+          done
+
+          cat > "$APPDIR/AppRun" << 'EOSCRIPT'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export LD_LIBRARY_PATH="$HERE/usr/lib/yy_control/lib:$HERE/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+          exec "$HERE/usr/lib/yy_control/rustdesk" "$@"
+          EOSCRIPT
+          chmod +x "$APPDIR/AppRun"
+          cat > "$APPDIR/yy_control.desktop" << 'EODESK'
+          [Desktop Entry]
+          Name=YY Control
+          Comment=Remote Desktop Client
+          Exec=yy_control
+          Icon=yy_control
+          Type=Application
+          Categories=Network;
+          Terminal=false
+          EODESK
+          convert -size 256x256 xc:transparent -fill "#4A90D9" \
+            -draw "circle 128,128 128,20" "$APPDIR/yy_control.png" || true
+
+          mkdir -p dist
+          APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
+            "$APPDIR" "dist/yy_control-x86_64.AppImage"
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: yy_control-linux-x86_64
+          path: dist/yy_control-x86_64.AppImage
+
+  # ============================================================
+  # Windows — exe bundle
+  # 依赖 vcpkg 安装原生库
+  # ============================================================
+  build-windows:
+    name: Windows exe (x86_64)
+    if: ${{ !startsWith(github.ref_name, 'release-linux-') && !startsWith(github.ref_name, 'test-linux-') }}
+    runs-on: windows-2022
+
+    steps:
+      - name: Clone source
+        run: |
+          git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules `
+            "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" .
+        shell: pwsh
+
+      - name: Install LLVM (for bindgen)
+        run: |
+          if (-not (Test-Path "C:\Program Files\LLVM\bin\clang.exe")) {
+            choco install llvm -y --no-progress
+          } else {
+            Write-Host "LLVM already installed"
+          }
+        shell: pwsh
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Fetch dependencies (for magnum-opus patching)
+        run: cargo fetch
+
+      - name: Fix magnum-opus build.rs (opus header path include both flat and subdir)
+        run: python3 scripts/fix-magnum-opus.py
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.5'
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '120deac3062162151622ca4860575a33844ba10b'
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          # Manifest mode would install to .\vcpkg_installed\ by default.
+          # magnum-opus build.rs expects $VCPKG_ROOT\installed\, so override.
+          & "$env:VCPKG_ROOT\vcpkg" install --triplet x64-windows-static `
+            --x-install-root="$env:VCPKG_ROOT\installed"
+          $opusInc = "$env:VCPKG_ROOT\installed\x64-windows-static\include\opus"
+          if (-not (Test-Path "$opusInc\opus_multistream.h")) {
+            Write-Error "ERROR: opus headers missing at $opusInc"
+            Get-ChildItem -Recurse -Filter opus_multistream.h `
+              "$env:VCPKG_ROOT\installed" -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Host "OK: opus headers found at $opusInc"
+        shell: pwsh
+
+      - name: Set Rust env vars for vcpkg
+        run: |
+          echo "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $env:GITHUB_ENV
+
+      - name: Build Rust CDYLIB
+        run: |
+          cargo build --lib --release `
+            --features flutter,yy_control,unix-file-copy-paste
+        env:
+          YY_SERVER_URL: ${{ secrets.YY_SERVER_URL }}
+          YY_KEY: ${{ secrets.YY_KEY }}
+
+      - name: Build Flutter Windows
+        run: |
+          cd flutter
+          flutter build windows --release
+
+      - name: Package Windows bundle
+        run: |
+          $BUNDLE = "flutter\build\windows\x64\runner\Release"
+          $OUTPUT = "dist\yy_control-windows-x86_64"
+          New-Item -ItemType Directory -Force -Path $OUTPUT
+          Copy-Item "$BUNDLE\*" "$OUTPUT\" -Recurse -Force
+          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\yy_control-windows-x86_64.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yy_control-windows-x86_64
+          path: dist/yy_control-windows-x86_64.zip

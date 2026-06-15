@@ -1,0 +1,16 @@
+# build outputs
+dist/
+flutter/build/
+target/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
