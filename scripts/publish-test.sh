@@ -5,7 +5,7 @@
 #===============================================
 set -e
 
-REPO_URL="https://github.com/readgo/yy_rustdesk_build.git"
+REPO_URL="https://github.com/readgo/yy_rustdesk_build_public.git"
 TAG="test-$(date +%Y%m%d%H%M%S)"
 
 # 如果带参数 linux/win，则发指定平台
@@ -26,4 +26,4 @@ git push origin "$TAG"
 
 echo ""
 echo "✅ 已推送标签: $TAG"
-echo "   查看进度: https://github.com/readgo/yy_rustdesk_build/actions"
+echo "   查看进度: https://github.com/readgo/yy_rustdesk_build_public/actions"
