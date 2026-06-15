@@ -239,7 +239,7 @@ jobs:
       - name: Build Rust CDYLIB
         run: |
           cargo build --lib --release `
-            --features flutter,yy_control,unix-file-copy-paste
+            --features flutter,yy_control
         env:
           YY_SERVER_URL: ${{ secrets.YY_SERVER_URL }}
           YY_KEY: ${{ secrets.YY_KEY }}
