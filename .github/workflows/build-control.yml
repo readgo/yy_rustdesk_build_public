@@ -16,16 +16,6 @@ on:
         required: false
         default: 'manual'
 
-env:
-  # All sensitive values live in repository Secrets:
-  #   SOURCE_GIT_HOST   - source code git host (e.g. example.com)
-  #   SOURCE_REPO       - <owner>/<name> path on that host
-  #   SOURCE_BRANCH     - branch to checkout
-  #   SOURCE_USERNAME   - basic-auth username
-  #   SOURCE_TOKEN      - basic-auth token / PAT
-  #   YY_SERVER_URL     - product backend host
-  #   YY_KEY            - product key (base64)
-
 jobs:
   # ============================================================
   # Linux — AppImage
