@@ -67,9 +67,10 @@ jobs:
              find "$VCPKG_ROOT/installed" -name "opus_multistream.h" 2>/dev/null; \
              exit 1)
 
-      - name: Setup Rust
+      - name: Setup Rust (1.75 MSRV)
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: '1.75.0'
           targets: x86_64-unknown-linux-gnu
 
       - name: Fetch dependencies (for magnum-opus patching)
