@@ -124,7 +124,9 @@ jobs:
             libXdamage.so.1 libXcomposite.so.1 libXrender.so.1 \
             libXext.so.6 libXcursor.so.1 libXi.so.6 libXtst.so.6 \
             libXrandr.so.2 libXinerama.so.1 libxkbcommon.so.0 \
-            libdl.so.2 libpthread.so.0 libstdc++.so.6 libm.so.6 libc.so.6 \
+            # glibc libs (libc, libdl, libpthread, librt) intentionally
+            # omitted — must come from the host system, never bundle.
+            libstdc++.so.6 libm.so.6 libgcc_s.so.1 \
             librt.so.1 libpcre2-8.so.0 libffi.so.8 libpixman-1.so.0 \
             libepoxy.so.0 libfribidi.so.0 libpng16.so.16 libjpeg.so.8 libexpat.so.1 \
             libuuid.so.1 libbz2.so.1.0 libEGL.so.1 libGL.so.1 \
