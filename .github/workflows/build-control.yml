@@ -126,7 +126,7 @@ jobs:
             libXrandr.so.2 libXinerama.so.1 libxkbcommon.so.0 \
             libdl.so.2 libpthread.so.0 libstdc++.so.6 libm.so.6 libc.so.6 \
             librt.so.1 libpcre2-8.so.0 libffi.so.8 libpixman-1.so.0 \
-            libepoxy.so.0 libfribidi.so.0 libpng16.so.16 libexpat.so.1 \
+            libepoxy.so.0 libfribidi.so.0 libpng16.so.16 libjpeg.so.8 libexpat.so.1 \
             libuuid.so.1 libbz2.so.1.0 libEGL.so.1 libGL.so.1 \
             libdrm.so.2 libgbm.so.1 libgcc_s.so.1 \
             libwayland-client.so.0 libwayland-cursor.so.0 \
@@ -164,7 +164,7 @@ jobs:
             "$APPDIR" "dist/yy_control-x86_64.AppImage"
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: yy_control-linux-x86_64
           path: dist/yy_control-x86_64.AppImage
@@ -261,7 +261,7 @@ jobs:
           Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\yy_control-windows-x86_64.zip"
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: yy_control-windows-x86_64
           path: dist/yy_control-windows-x86_64.zip
