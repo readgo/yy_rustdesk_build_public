@@ -27,7 +27,7 @@ jobs:
   build-linux:
     name: Linux AppImage (x86_64)
     if: ${{ !startsWith(github.ref_name, 'release-win-') && !startsWith(github.ref_name, 'test-win-') }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Clone source
@@ -38,7 +38,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --fix-broken \
+          sudo apt-get install -y -qq \
             libgtk-3-dev libxdo-dev libva-dev libxcb-randr0-dev \
             libpulse-dev libgstreamer-plugins-base1.0-dev \
             libxfixes-dev libxtst-dev libxkbcommon-dev \
@@ -96,7 +96,7 @@ jobs:
           cd flutter
           flutter build linux --release
         env:
-          LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/11
+          LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/12
 
       - name: Download appimagetool
         run: |
