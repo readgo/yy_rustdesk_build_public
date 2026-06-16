@@ -91,6 +91,19 @@ jobs:
           YY_SERVER_URL: ${{ secrets.YY_SERVER_URL }}
           YY_KEY: ${{ secrets.YY_KEY }}
 
+      - name: Lower glibc compatibility (remove weak symbols GLIBC_2.39 refs)
+        run: |
+          sudo apt-get install -y -qq patchelf
+          LIB="target/release/librustdesk.so"
+          if objdump -T "$LIB" | grep -q "GLIBC_2\.39"; then
+            for sym in $(objdump -T "$LIB" | grep "GLIBC_2\.39" | awk '{print $NF}'); do
+              patchelf --clear-symbol-version "$sym" "$LIB" 2>/dev/null || true
+            done
+            echo "Fixed GLIBC_2.39 compat for: $(objdump -T "$LIB" | grep GLIBC_2.39 | wc -l) symbols"
+          else
+            echo "No GLIBC_2.39 symbols found"
+          fi
+
       - name: Build Flutter Linux
         run: |
           cd flutter
