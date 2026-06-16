@@ -38,7 +38,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq \
+          sudo apt-get install -y -qq --fix-broken \
             libgtk-3-dev libxdo-dev libva-dev libxcb-randr0-dev \
             libpulse-dev libgstreamer-plugins-base1.0-dev \
             libxfixes-dev libxtst-dev libxkbcommon-dev \
