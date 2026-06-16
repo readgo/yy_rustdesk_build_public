@@ -27,7 +27,7 @@ jobs:
   build-linux:
     name: Linux AppImage (x86_64)
     if: ${{ !startsWith(github.ref_name, 'release-win-') && !startsWith(github.ref_name, 'test-win-') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Clone source
@@ -96,7 +96,7 @@ jobs:
           cd flutter
           flutter build linux --release
         env:
-          LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/12
+          LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/11
 
       - name: Download appimagetool
         run: |
