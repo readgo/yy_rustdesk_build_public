@@ -29,6 +29,11 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nasm
+
       - name: Install Android NDK r23b
         run: |
           NDK_DIR="$HOME/android-ndk-r23b"
