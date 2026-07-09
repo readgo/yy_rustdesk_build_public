@@ -26,7 +26,7 @@ jobs:
   # ============================================================
   build-linux:
     name: Linux AppImage (x86_64)
-    if: ${{ !startsWith(github.ref_name, 'release-win-') && !startsWith(github.ref_name, 'test-win-') }}
+    if: ${{ !startsWith(github.ref_name, 'release-win-') && !startsWith(github.ref_name, 'test-win-') && !startsWith(github.ref_name, 'release-apk-') && !startsWith(github.ref_name, 'test-apk-') }}
     runs-on: ubuntu-24.04
 
     steps:
@@ -188,7 +188,7 @@ jobs:
   # ============================================================
   build-windows:
     name: Windows exe (x86_64)
-    if: ${{ !startsWith(github.ref_name, 'release-linux-') && !startsWith(github.ref_name, 'test-linux-') }}
+    if: ${{ !startsWith(github.ref_name, 'release-linux-') && !startsWith(github.ref_name, 'test-linux-') && !startsWith(github.ref_name, 'release-apk-') && !startsWith(github.ref_name, 'test-apk-') }}
     runs-on: windows-2022
 
     steps:
