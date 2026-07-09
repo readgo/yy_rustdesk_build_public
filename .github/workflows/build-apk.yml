@@ -32,7 +32,12 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nasm
+          sudo apt-get install -y -qq nasm libclang-dev
+          # libclang.so 路径检测（适配不同 Ubuntu 版本）
+          LIBCLANG=$(find /usr/lib -name 'libclang*.so*' -type f 2>/dev/null | head -1 || true)
+          if [ -n "$LIBCLANG" ]; then
+            echo "LIBCLANG_PATH=$LIBCLANG" >> $GITHUB_ENV
+          fi
 
       - name: Install Android NDK r23b
         run: |
@@ -116,7 +121,6 @@ jobs:
           export LINKER="$TOOLCHAIN/aarch64-linux-android21-clang"
           export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android21 --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           export PKG_CONFIG_PATH="$VCPKG_ROOT/installed/arm64-android/lib/pkgconfig"
-          export LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu/libclang-17.so"
           export DISABLE_HBBS_HTTP=1
           cargo ndk --platform 21 --target aarch64-linux-android build --release \
             --features flutter,disable_hbbs_http
@@ -132,7 +136,6 @@ jobs:
           export LINKER="$TOOLCHAIN/armv7a-linux-androideabi21-clang"
           export BINDGEN_EXTRA_CLANG_ARGS="--target=armv7-linux-androideabi --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           export PKG_CONFIG_PATH="$VCPKG_ROOT/installed/arm-neon-android/lib/pkgconfig"
-          export LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu/libclang-17.so"
           export DISABLE_HBBS_HTTP=1
           cargo ndk --platform 21 --target armv7-linux-androideabi build --release \
             --features flutter,disable_hbbs_http
