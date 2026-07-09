@@ -25,7 +25,34 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             nasm libclang-17-dev \
-            libvpx-dev libyuv-dev libopus-dev
+            libopus-dev libvpx-dev libyuv-dev
+
+      - name: Setup NDK r23b
+        run: |
+          NDK_DIR="$HOME/.yy_rustdesk_env/android-ndk-r23b"
+          if [ ! -d "$NDK_DIR" ]; then
+            echo "下载 NDK r23b..."
+            mkdir -p "$HOME/.yy_rustdesk_env"
+            curl -# -L -o /tmp/ndk-r23b.zip \
+              "https://dl.google.com/android/repository/android-ndk-r23b-linux.zip"
+            unzip -q /tmp/ndk-r23b.zip -d "$HOME/.yy_rustdesk_env"
+            rm -f /tmp/ndk-r23b.zip
+          fi
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+
+      - name: Inject system headers into NDK sysroot
+        run: |
+          NDK_DIR="$HOME/.yy_rustdesk_env/android-ndk-r23b"
+          SYSROOT_USR="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include"
+          echo "注入 opus headers..."
+          sudo cp -r /usr/include/opus "$SYSROOT_USR/" 2>/dev/null || true
+          echo "注入 vpx headers..."
+          sudo cp -r /usr/include/vpx "$SYSROOT_USR/" 2>/dev/null || true
+          echo "注入 yuv headers..."
+          sudo cp -r /usr/include/libyuv "$SYSROOT_USR/" 2>/dev/null || true
+          echo "验证:"
+          ls "$SYSROOT_USR/opus/opus_multistream.h" 2>/dev/null && echo "  opus OK" || echo "  opus MISSING"
+          ls "$SYSROOT_USR/vpx/vp8.h" 2>/dev/null && echo "  vpx OK" || echo "  vpx MISSING"
 
       - name: Build APK (via build_light.sh)
         env:
