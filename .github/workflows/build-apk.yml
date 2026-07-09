@@ -23,7 +23,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nasm libclang-dev
+          sudo apt-get install -y -qq nasm libclang-17-dev
 
       - name: Build APK (via build_light.sh)
         env:
