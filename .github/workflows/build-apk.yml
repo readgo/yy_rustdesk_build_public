@@ -20,6 +20,17 @@ jobs:
           git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
             "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" .
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            nasm libclang-dev \
+            libgtk-3-dev libxdo-dev libva-dev libxcb-randr0-dev \
+            libvpx-dev libyuv-dev libopus-dev libaom-dev libjpeg-turbo8-dev \
+            libpulse-dev libgstreamer-plugins-base1.0-dev \
+            libxfixes-dev libxtst-dev libxkbcommon-dev \
+            libpam0g-dev curl wget
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -28,16 +39,6 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq nasm libclang-dev
-          # libclang.so 路径检测（适配不同 Ubuntu 版本）
-          LIBCLANG=$(find /usr/lib -name 'libclang*.so*' -type f 2>/dev/null | head -1 || true)
-          if [ -n "$LIBCLANG" ]; then
-            echo "LIBCLANG_PATH=$LIBCLANG" >> $GITHUB_ENV
-          fi
 
       - name: Install Android NDK r23b
         run: |
@@ -65,44 +66,55 @@ jobs:
           channel: stable
           flutter-version: '3.24.5'
 
+      # 以下步骤与 build_light.sh 一致
       - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: '120deac3062162151622ca4860575a33844ba10b'
-          doNotCache: false
+        run: |
+          VCPKG_DIR="$HOME/.yy_rustdesk_env/vcpkg"
+          if [ ! -x "$VCPKG_DIR/vcpkg" ]; then
+            mkdir -p "$HOME/.yy_rustdesk_env"
+            git clone https://github.com/microsoft/vcpkg.git "$VCPKG_DIR"
+            cd "$VCPKG_DIR"
+            ./bootstrap-vcpkg.sh -disableMetrics
+          fi
+          echo "VCPKG_ROOT=$VCPKG_DIR" >> $GITHUB_ENV
+          echo "VCPKG_INSTALLED_ROOT=$VCPKG_DIR/installed" >> $GITHUB_ENV
 
       - name: Install vcpkg deps (arm64-android)
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: |
           $VCPKG_ROOT/vcpkg install --triplet arm64-android --keep-going \
             --x-install-root="$VCPKG_ROOT/installed" || true
-          if [ ! -f "$VCPKG_ROOT/installed/arm64-android/include/vpx/vp8.h" ] || \
-             [ ! -f "$VCPKG_ROOT/installed/arm64-android/include/opus/opus_multistream.h" ]; then
-            echo "首轮安装头文件缺失，清理缓存重试..."
+          # 首轮失败则清理缓存重试
+          if [ ! -f "$VCPKG_ROOT/installed/arm64-android/include/vpx/vp8.h" ]; then
             rm -rf "$VCPKG_ROOT/buildtrees/detect_compiler"
             $VCPKG_ROOT/vcpkg install --triplet arm64-android --keep-going \
               --x-install-root="$VCPKG_ROOT/installed" || true
           fi
           ls "$VCPKG_ROOT/installed/arm64-android/include/vpx/vp8.h" || \
             (echo "ERROR: arm64-android VPX headers missing"; exit 1)
+          ls "$VCPKG_ROOT/installed/arm64-android/include/opus/opus_multistream.h" || \
+            (echo "ERROR: arm64-android opus headers missing"; exit 1)
 
       - name: Install vcpkg deps (arm-neon-android)
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: |
           $VCPKG_ROOT/vcpkg install --triplet arm-neon-android --keep-going \
             --x-install-root="$VCPKG_ROOT/installed" || true
-          if [ ! -f "$VCPKG_ROOT/installed/arm-neon-android/include/vpx/vp8.h" ] || \
-             [ ! -f "$VCPKG_ROOT/installed/arm-neon-android/include/opus/opus_multistream.h" ]; then
-            echo "首轮安装头文件缺失，清理缓存重试..."
+          if [ ! -f "$VCPKG_ROOT/installed/arm-neon-android/include/vpx/vp8.h" ]; then
             rm -rf "$VCPKG_ROOT/buildtrees/detect_compiler"
             $VCPKG_ROOT/vcpkg install --triplet arm-neon-android --keep-going \
               --x-install-root="$VCPKG_ROOT/installed" || true
           fi
           ls "$VCPKG_ROOT/installed/arm-neon-android/include/vpx/vp8.h" || \
             (echo "ERROR: arm-neon-android VPX headers missing"; exit 1)
+          ls "$VCPKG_ROOT/installed/arm-neon-android/include/opus/opus_multistream.h" || \
+            (echo "ERROR: arm-neon-android opus headers missing"; exit 1)
 
       - name: Create vcpkg symlinks
         run: |
           ln -sf "$VCPKG_ROOT/installed/arm-neon-android" "$VCPKG_ROOT/installed/arm-android" 2>/dev/null || true
-          # 等待 Rust 编译时 VCPKG_ROOT/installed/ 路径
 
       - name: Fetch Rust dependencies
         run: cargo fetch
@@ -121,6 +133,8 @@ jobs:
           export LINKER="$TOOLCHAIN/aarch64-linux-android21-clang"
           export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android21 --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           export PKG_CONFIG_PATH="$VCPKG_ROOT/installed/arm64-android/lib/pkgconfig"
+          # libclang 路径检测
+          export LIBCLANG_PATH=$(find /usr/lib -name 'libclang*.so*' -type f 2>/dev/null | head -1)
           export DISABLE_HBBS_HTTP=1
           cargo ndk --platform 21 --target aarch64-linux-android build --release \
             --features flutter,disable_hbbs_http
@@ -136,6 +150,7 @@ jobs:
           export LINKER="$TOOLCHAIN/armv7a-linux-androideabi21-clang"
           export BINDGEN_EXTRA_CLANG_ARGS="--target=armv7-linux-androideabi --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           export PKG_CONFIG_PATH="$VCPKG_ROOT/installed/arm-neon-android/lib/pkgconfig"
+          export LIBCLANG_PATH=$(find /usr/lib -name 'libclang*.so*' -type f 2>/dev/null | head -1)
           export DISABLE_HBBS_HTTP=1
           cargo ndk --platform 21 --target armv7-linux-androideabi build --release \
             --features flutter,disable_hbbs_http
@@ -143,13 +158,11 @@ jobs:
       - name: Copy .so to jniLibs
         run: |
           NDK="${{ env.ANDROID_NDK_HOME }}"
-          # arm64-v8a
           mkdir -p flutter/android/app/src/main/jniLibs/arm64-v8a
           cp target/aarch64-linux-android/release/liblibrustdesk.so \
              flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
           cp "$NDK/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so" \
              flutter/android/app/src/main/jniLibs/arm64-v8a/libc++_shared.so
-          # armeabi-v7a
           mkdir -p flutter/android/app/src/main/jniLibs/armeabi-v7a
           cp target/armv7-linux-androideabi/release/liblibrustdesk.so \
              flutter/android/app/src/main/jniLibs/armeabi-v7a/librustdesk.so
@@ -162,7 +175,6 @@ jobs:
           BUILD_NUMBER=$(grep -oP '\+\K[0-9]+' flutter/pubspec.yaml | head -1 || echo "1")
           echo "YY_VERSION=$VERSION" >> $GITHUB_ENV
           echo "YY_BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
-          echo "版本号: $VERSION (build $BUILD_NUMBER)"
 
       - name: Build Flutter APK
         run: |
