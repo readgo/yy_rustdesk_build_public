@@ -49,8 +49,7 @@ jobs:
           if [ ! -x "$VCPKG_DIR/vcpkg" ]; then
             echo "下载 vcpkg..."
             git clone https://github.com/microsoft/vcpkg.git "$VCPKG_DIR"
-            cd "$VCPKG_DIR"
-            ./bootstrap-vcpkg.sh -disableMetrics
+            "$VCPKG_DIR/bootstrap-vcpkg.sh" -disableMetrics
           fi
           export VCPKG_ROOT="$VCPKG_DIR"
           echo "VCPKG_ROOT=$VCPKG_DIR" >> $GITHUB_ENV
@@ -59,6 +58,9 @@ jobs:
           VCPKG_INSTALLED_DIR="$BUILD_ENV_DIR/vcpkg_installed"
           export VCPKG_INSTALLED_ROOT="$VCPKG_INSTALLED_DIR"
           echo "VCPKG_INSTALLED_ROOT=$VCPKG_INSTALLED_DIR" >> $GITHUB_ENV
+
+          # vcpkg install 需要从仓库根目录运行（vcpkg.json manifest 在根目录）
+          cd "$GITHUB_WORKSPACE"
 
           # 安装 arm64-android 依赖（首次编译较慢）
           if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include/vpx" ]; then
