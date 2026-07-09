@@ -1,0 +1,202 @@
+name: Build Android APK
+
+on:
+  push:
+    tags:
+      - 'release-apk-*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build-apk:
+    name: Android APK (arm64-v8a + armeabi-v7a)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Clone source
+        run: |
+          git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
+            "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" .
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK r23b
+        run: |
+          NDK_DIR="$HOME/android-ndk-r23b"
+          if [ ! -d "$NDK_DIR" ]; then
+            echo "下载 NDK r23b..."
+            curl -# -L -o /tmp/ndk-r23b.zip \
+              "https://dl.google.com/android/repository/android-ndk-r23b-linux.zip"
+            unzip -q /tmp/ndk-r23b.zip -d "$HOME"
+            rm -f /tmp/ndk-r23b.zip
+          fi
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.5'
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '120deac3062162151622ca4860575a33844ba10b'
+          doNotCache: false
+
+      - name: Install vcpkg deps (arm64-android)
+        run: |
+          $VCPKG_ROOT/vcpkg install --triplet arm64-android --keep-going \
+            --x-install-root="$VCPKG_ROOT/installed" || true
+          if [ ! -f "$VCPKG_ROOT/installed/arm64-android/include/vpx/vp8.h" ] || \
+             [ ! -f "$VCPKG_ROOT/installed/arm64-android/include/opus/opus_multistream.h" ]; then
+            echo "首轮安装头文件缺失，清理缓存重试..."
+            rm -rf "$VCPKG_ROOT/buildtrees/detect_compiler"
+            $VCPKG_ROOT/vcpkg install --triplet arm64-android --keep-going \
+              --x-install-root="$VCPKG_ROOT/installed" || true
+          fi
+          ls "$VCPKG_ROOT/installed/arm64-android/include/vpx/vp8.h" || \
+            (echo "ERROR: arm64-android VPX headers missing"; exit 1)
+
+      - name: Install vcpkg deps (arm-neon-android)
+        run: |
+          $VCPKG_ROOT/vcpkg install --triplet arm-neon-android --keep-going \
+            --x-install-root="$VCPKG_ROOT/installed" || true
+          if [ ! -f "$VCPKG_ROOT/installed/arm-neon-android/include/vpx/vp8.h" ] || \
+             [ ! -f "$VCPKG_ROOT/installed/arm-neon-android/include/opus/opus_multistream.h" ]; then
+            echo "首轮安装头文件缺失，清理缓存重试..."
+            rm -rf "$VCPKG_ROOT/buildtrees/detect_compiler"
+            $VCPKG_ROOT/vcpkg install --triplet arm-neon-android --keep-going \
+              --x-install-root="$VCPKG_ROOT/installed" || true
+          fi
+          ls "$VCPKG_ROOT/installed/arm-neon-android/include/vpx/vp8.h" || \
+            (echo "ERROR: arm-neon-android VPX headers missing"; exit 1)
+
+      - name: Create vcpkg symlinks
+        run: |
+          ln -sf "$VCPKG_ROOT/installed/arm-neon-android" "$VCPKG_ROOT/installed/arm-android" 2>/dev/null || true
+          # 等待 Rust 编译时 VCPKG_ROOT/installed/ 路径
+
+      - name: Fetch Rust dependencies
+        run: cargo fetch
+
+      - name: Fix magnum-opus build.rs
+        run: python3 scripts/fix-magnum-opus.py
+
+      - name: Build Rust (aarch64)
+        run: |
+          NDK="${{ env.ANDROID_NDK_HOME }}"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC="$TOOLCHAIN/aarch64-linux-android21-clang"
+          export CXX="$TOOLCHAIN/aarch64-linux-android21-clang++"
+          export AR="$TOOLCHAIN/llvm-ar"
+          export RANLIB="$TOOLCHAIN/llvm-ranlib"
+          export LINKER="$TOOLCHAIN/aarch64-linux-android21-clang"
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android21 --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          export PKG_CONFIG_PATH="$VCPKG_ROOT/installed/arm64-android/lib/pkgconfig"
+          export LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu/libclang-17.so"
+          export DISABLE_HBBS_HTTP=1
+          cargo ndk --platform 21 --target aarch64-linux-android build --release \
+            --features flutter,disable_hbbs_http
+
+      - name: Build Rust (armv7)
+        run: |
+          NDK="${{ env.ANDROID_NDK_HOME }}"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC="$TOOLCHAIN/armv7a-linux-androideabi21-clang"
+          export CXX="$TOOLCHAIN/armv7a-linux-androideabi21-clang++"
+          export AR="$TOOLCHAIN/llvm-ar"
+          export RANLIB="$TOOLCHAIN/llvm-ranlib"
+          export LINKER="$TOOLCHAIN/armv7a-linux-androideabi21-clang"
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=armv7-linux-androideabi --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          export PKG_CONFIG_PATH="$VCPKG_ROOT/installed/arm-neon-android/lib/pkgconfig"
+          export LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu/libclang-17.so"
+          export DISABLE_HBBS_HTTP=1
+          cargo ndk --platform 21 --target armv7-linux-androideabi build --release \
+            --features flutter,disable_hbbs_http
+
+      - name: Copy .so to jniLibs
+        run: |
+          NDK="${{ env.ANDROID_NDK_HOME }}"
+          # arm64-v8a
+          mkdir -p flutter/android/app/src/main/jniLibs/arm64-v8a
+          cp target/aarch64-linux-android/release/liblibrustdesk.so \
+             flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+          cp "$NDK/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so" \
+             flutter/android/app/src/main/jniLibs/arm64-v8a/libc++_shared.so
+          # armeabi-v7a
+          mkdir -p flutter/android/app/src/main/jniLibs/armeabi-v7a
+          cp target/armv7-linux-androideabi/release/liblibrustdesk.so \
+             flutter/android/app/src/main/jniLibs/armeabi-v7a/librustdesk.so
+          cp "$NDK/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a/libc++_shared.so" \
+             flutter/android/app/src/main/jniLibs/armeabi-v7a/libc++_shared.so
+
+      - name: Extract version from Cargo.toml
+        run: |
+          VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
+          BUILD_NUMBER=$(grep -oP '\+\K[0-9]+' flutter/pubspec.yaml | head -1 || echo "1")
+          echo "YY_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "YY_BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "版本号: $VERSION (build $BUILD_NUMBER)"
+
+      - name: Build Flutter APK
+        run: |
+          cd flutter
+          flutter pub get
+          flutter build apk \
+            --target-platform android-arm64,android-arm \
+            --release \
+            --build-name="${{ env.YY_VERSION }}" \
+            --build-number="${{ env.YY_BUILD_NUMBER }}" \
+            -Pyy.vendor="yy" \
+            -Pyy.mode="light" \
+            -Pyy.server-url="${{ secrets.YY_SERVER_URL }}" \
+            -Pyy.key="${{ secrets.YY_KEY }}" \
+            -Pyy.app-name="YYDesk" \
+            -Pyy.application-id="com.carriez.yydesk" \
+            --dart-define=YY_MODE="light" \
+            --dart-define=YY_TERMINAL_URL="${{ secrets.YY_TERMINAL_URL }}" \
+            --dart-define=YY_SECRET_KEY="${{ secrets.YY_SECRET_KEY }}"
+
+      - name: Rename APK
+        run: |
+          OUTPUT_DIR="flutter/build/app/outputs/flutter-apk"
+          APK_SRC=$(ls "$OUTPUT_DIR"/app-*.apk 2>/dev/null | head -1)
+          if [ -z "$APK_SRC" ]; then
+            echo "ERROR: APK not found"
+            exit 1
+          fi
+          mkdir -p dist
+          APK_NAME="YYDesk-${{ env.YY_VERSION }}.apk"
+          cp "$APK_SRC" "dist/$APK_NAME"
+          echo "APK: dist/$APK_NAME"
+          ls -lh "dist/$APK_NAME"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          printf 'YYDesk v%s Android APK\n\n### 安装\n下载 APK 后，在 Android 设备上安装即可。\n首次安装需在系统设置中允许「未知来源应用」。\n\n### 架构\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)\n' "${{ env.YY_VERSION }}" > /tmp/release-notes.md
+          gh release create "$TAG" \
+            dist/*.apk \
+            --title "YYDesk v${{ env.YY_VERSION }}" \
+            --notes-file /tmp/release-notes.md \
+            --generate-notes
