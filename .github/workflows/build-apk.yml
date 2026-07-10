@@ -108,21 +108,22 @@ jobs:
 
       - name: Rename APK
         run: |
-          # 查找所有可能的 APK 输出路径
-          for DIR in "flutter/build/app/outputs/flutter-apk" "build/app/outputs/flutter-apk" "android/app/build/outputs/apk/release"; do
-            APK_SRC=$(ls "$DIR"/*.apk 2>/dev/null | head -1)
-            if [ -n "$APK_SRC" ]; then
-              mkdir -p dist
-              APK_NAME="YYDesk-${{ env.YY_VERSION }}.apk"
-              cp "$APK_SRC" "dist/$APK_NAME"
-              echo "APK: dist/$APK_NAME"
-              ls -lh "dist/$APK_NAME"
-              exit 0
-            fi
-          done
-          echo "ERROR: APK not found in any expected path"
-          find . -name "*.apk" -type f 2>/dev/null | head -5
-          exit 1
+          echo "=== 查找 APK ==="
+          pwd
+          echo "--- flutter 输出目录 ---"
+          ls -la flutter/build/app/outputs/flutter-apk/ 2>/dev/null || echo "目录不存在"
+          echo "--- 搜索所有 .apk ---"
+          find . -name "*.apk" -type f 2>/dev/null | head -10
+          APK_SRC=$(find . -name "*.apk" -type f 2>/dev/null | head -1)
+          if [ -z "$APK_SRC" ]; then
+            echo "ERROR: no APK found"
+            exit 1
+          fi
+          mkdir -p dist
+          APK_NAME="YYDesk-${{ env.YY_VERSION }}.apk"
+          cp "$APK_SRC" "dist/$APK_NAME"
+          echo "APK: $APK_NAME"
+          ls -lh "dist/$APK_NAME"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
