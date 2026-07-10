@@ -44,7 +44,7 @@ jobs:
 
       - name: Setup Android SDK
         run: |
-          SDK_DIR="$HOME/android-sdk"
+          SDK_DIR="$HOME/.yy_rustdesk_env/android-sdk"
           if [ ! -d "$SDK_DIR/cmdline-tools" ]; then
             mkdir -p "$SDK_DIR"
             curl -# -L -o /tmp/cmdline-tools.zip \
