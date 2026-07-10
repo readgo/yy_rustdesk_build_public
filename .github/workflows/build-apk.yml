@@ -34,9 +34,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nasm libclang-17-dev ca-certificates-java
-          # 更新 Java 证书
-          sudo update-ca-certificates -f 2>/dev/null || true
+          sudo apt-get install -y -qq nasm libclang-17-dev
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -45,31 +43,13 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Link Android SDK for build_light.sh
         run: |
-          SDK_DIR="$HOME/.yy_rustdesk_env/android-sdk"
-          if [ ! -d "$SDK_DIR/cmdline-tools" ]; then
-            mkdir -p "$SDK_DIR"
-            curl -# -L -o /tmp/cmdline-tools.zip \
-              "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
-            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline
-            mkdir -p "$SDK_DIR/cmdline-tools"
-            mv /tmp/cmdline/cmdline-tools "$SDK_DIR/cmdline-tools/latest"
-            rm -rf /tmp/cmdline-tools.zip /tmp/cmdline
-          fi
-          export ANDROID_HOME="$SDK_DIR"
-          export ANDROID_SDK_ROOT="$SDK_DIR"
-          echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> $GITHUB_ENV
-          # Accept licenses
-          yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses 2>&1 | tail -3
-          # Install required SDK components
-          "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
-            "platform-tools" 2>&1 | tail -5
-          echo "Android SDK ready"
-          ls -la "$SDK_DIR/platforms/" 2>/dev/null
-          ls -la "$SDK_DIR/build-tools/" 2>/dev/null
+          # build_light.sh 把 ANDROID_HOME 设为 $BUILD_ENV_DIR/android-sdk
+          # setup-android 装到 /usr/local/lib/android/sdk
+          ln -sf /usr/local/lib/android/sdk "$HOME/.yy_rustdesk_env/android-sdk" 2>/dev/null || true
 
       - name: Setup Rust Android targets
         run: |
