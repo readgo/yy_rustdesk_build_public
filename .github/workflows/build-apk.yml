@@ -132,6 +132,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -x
           TAG="${{ github.ref_name }}"
           VERSION="${{ env.YY_VERSION }}"
           if [ -z "$VERSION" ]; then
@@ -143,12 +144,16 @@ jobs:
           echo "--- APK files ---"
           find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
           printf 'YYDesk v%s Android APK\n\n### 安装\n下载 APK 后，在 Android 设备上安装即可。\n首次安装需在系统设置中允许「未知来源应用」。\n\n### 架构\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)\n' "$VERSION" > /tmp/release-notes.md
+          echo "=== 开始创建 Release ==="
           gh release create "$TAG" \
             "$GITHUB_WORKSPACE/dist/"*.apk \
             --title "YYDesk v$VERSION" \
             --notes-file /tmp/release-notes.md \
-            --generate-notes || {
-            echo "Release 已存在，更新中..."
-            gh release upload "$TAG" "$GITHUB_WORKSPACE/dist/"*.apk --clobber
-            gh release edit "$TAG" --notes-file /tmp/release-notes.md
-          }
+            --generate-notes 2>&1 | tee /tmp/gh-release.log
+          exit_code=${PIPESTATUS[0]}
+          if [ $exit_code -ne 0 ]; then
+            echo "创建失败 (exit=$exit_code)，尝试更新已有 Release..."
+            cat /tmp/gh-release.log
+            gh release upload "$TAG" "$GITHUB_WORKSPACE/dist/"*.apk --clobber 2>&1 || echo "upload 失败"
+            gh release edit "$TAG" --notes-file /tmp/release-notes.md 2>&1 || echo "edit 失败"
+          fi
