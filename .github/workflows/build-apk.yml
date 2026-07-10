@@ -69,16 +69,28 @@ jobs:
           export VCPKG_INSTALLED_DIR="$BUILD_ENV_DIR/vcpkg_installed"
           export VCPKG_ROOT="$VCPKG_DIR"
 
-          # 装 arm64-android 依赖（manifest 模式，从仓库根目录）
+          # 装 arm64-android 依赖（--classic 逐个指定，避免 ffmpeg 等复杂包失败拖累全局）
           cd "$GITHUB_WORKSPACE"
-          if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include" ]; then
+          if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include/opus" ]; then
             echo "=== 安装 arm64-android 依赖 ==="
-            "$VCPKG_DIR/vcpkg" install --triplet arm64-android \
+            "$VCPKG_DIR/vcpkg" install --classic \
+              "opus:arm64-android" \
+              "libvpx:arm64-android" \
+              "libyuv:arm64-android" \
+              "aom:arm64-android" \
+              "oboe:arm64-android" \
+              "cpu-features:arm64-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
-          if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include" ]; then
+          if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include/opus" ]; then
             echo "=== 安装 arm-neon-android 依赖 ==="
-            "$VCPKG_DIR/vcpkg" install --triplet arm-neon-android \
+            "$VCPKG_DIR/vcpkg" install --classic \
+              "opus:arm-neon-android" \
+              "libvpx:arm-neon-android" \
+              "libyuv:arm-neon-android" \
+              "aom:arm-neon-android" \
+              "oboe:arm-neon-android" \
+              "cpu-features:arm-neon-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
 
@@ -87,6 +99,14 @@ jobs:
           find "$VCPKG_INSTALLED_DIR/arm64-android/include" -name "*.h" 2>/dev/null | wc -l
           echo "=== arm64 libs ==="
           ls "$VCPKG_INSTALLED_DIR/arm64-android/lib/" 2>/dev/null | wc -l
+          
+          # 创建 liboboe.so 符号链接（cpal 需要 -loboe，但 NDK r23b 不自带 oboe）
+          if [ -f "$VCPKG_INSTALLED_DIR/arm64-android/lib/liboboe.a" ]; then
+            ln -sf liboboe.a "$VCPKG_INSTALLED_DIR/arm64-android/lib/liboboe.so" 2>/dev/null || true
+          fi
+          if [ -f "$VCPKG_INSTALLED_DIR/arm-neon-android/lib/liboboe.a" ]; then
+            ln -sf liboboe.a "$VCPKG_INSTALLED_DIR/arm-neon-android/lib/liboboe.so" 2>/dev/null || true
+          fi
 
           # 跑 build_light.sh
           echo "=== 开始 build_light.sh ==="
