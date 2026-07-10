@@ -53,18 +53,35 @@ jobs:
 
       - name: Configure Gradle
         run: |
-          # 用系统 Gradle 替换 wrapper（避免 wrapper 下载失败）
-          if command -v gradle &>/dev/null; then
-            SYSTEM_GRADLE=$(which gradle)
-            SYSTEM_VERSION=$(gradle --version 2>/dev/null | grep "Gradle " | head -1)
-            echo "系统 Gradle: $SYSTEM_GRADLE ($SYSTEM_VERSION)"
+          echo "=== 系统 Gradle ==="
+          which gradle
+          gradle --version 2>&1 | head -5 || echo "gradle 不可用"
+          # 查找 Gradle 安装目录
+          GRADLE_HOME_DIR=$(dirname $(dirname $(which gradle 2>/dev/null)) 2>/dev/null)
+          echo "Gradle 安装目录: $GRADLE_HOME_DIR"
+          if [ -f "$GRADLE_HOME_DIR/lib/gradle-launcher.jar" ]; then
+            echo "找到完整 Gradle 发行版: $GRADLE_HOME_DIR"
+          else
+            # 从 gradle wrapper 缓存查找已下载的发行版
+            GRADLE_CACHE=$(find "$HOME/.gradle/wrapper/dists" -name "gradle-wrapper.jar" 2>/dev/null | head -1)
+            if [ -n "$GRADLE_CACHE" ]; then
+              echo "找到缓存的 Gradle wrapper: $GRADLE_CACHE"
+            fi
           fi
-          # 替换 gradlew 为直接调用系统 gradle
+          # 替换 gradlew 直接调用 gradle 守护进程
           cat > flutter/android/gradlew << 'SCRIPT'
           #!/bin/sh
-          exec gradle "$@"
+          GRADLE="$(which gradle 2>/dev/null)"
+          if [ -n "$GRADLE" ] && "$GRADLE" --version >/dev/null 2>&1; then
+            exec "$GRADLE" "$@"
+          fi
+          # fallback: 如果 gradle 也不可用，让 wrapper 自己尝试
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          exec java -classpath "$DIR/gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"
           SCRIPT
           chmod +x flutter/android/gradlew
+          cat flutter/android/gradlew | head -10
+          echo "--- gradlew 替换完成 ---"
           # 创建阿里云镜像配置
           mkdir -p ~/.gradle/init.d
           cat > ~/.gradle/init.d/mirror.gradle << 'GROOVY'
