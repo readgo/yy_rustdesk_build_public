@@ -53,7 +53,7 @@ jobs:
 
       - name: Configure Gradle for SSL
         run: |
-          mkdir -p ~/.gradle
+          mkdir -p ~/.gradle/init.d
           # 使用阿里云 Gradle 镜像（国内网络）
           cat > ~/.gradle/init.d/mirror.gradle << 'GROOVY'
           allprojects {
