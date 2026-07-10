@@ -63,9 +63,14 @@ jobs:
           cd "$GITHUB_WORKSPACE"
 
           # 安装 arm64-android 依赖（首次编译较慢）
-          if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include/vpx" ]; then
+          if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include/opus" ]; then
             echo "安装 arm64-android 依赖..."
-            "$VCPKG_DIR/vcpkg" install --triplet arm64-android \
+            # 手动指定包名绕过 manifest 模式下的平台选择问题
+            "$VCPKG_DIR/vcpkg" install \
+              "opus:arm64-android" \
+              "libvpx:arm64-android" \
+              "libyuv:arm64-android" \
+              "aom:arm64-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
             echo "arm64-android 依赖安装完成"
           else
@@ -73,9 +78,13 @@ jobs:
           fi
 
           # 安装 arm-neon-android 依赖
-          if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include/vpx" ]; then
+          if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include/opus" ]; then
             echo "安装 arm-neon-android 依赖..."
-            "$VCPKG_DIR/vcpkg" install --triplet arm-neon-android \
+            "$VCPKG_DIR/vcpkg" install \
+              "opus:arm-neon-android" \
+              "libvpx:arm-neon-android" \
+              "libyuv:arm-neon-android" \
+              "aom:arm-neon-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
             echo "arm-neon-android 依赖安装完成"
           else
