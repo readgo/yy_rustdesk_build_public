@@ -40,14 +40,19 @@ jobs:
         if: failure()
         run: |
           mkdir -p /tmp/diag
-          echo "Build output (last 100 lines):" > /tmp/diag/report.txt
-          tail -100 /tmp/build-output.log 2>/dev/null >> /tmp/diag/report.txt
+          echo "=== vcpkg install log ===" > /tmp/diag/report.txt
+          grep -n "vcpkg\|Vcpkg\|NDK\|ndk\|error\|Error\|FAIL\|fail\|installed" /tmp/build-output.log 2>/dev/null | tail -60 >> /tmp/diag/report.txt
           echo "" >> /tmp/diag/report.txt
-          echo "Vcpkg headers:" >> /tmp/diag/report.txt
+          echo "=== Vcpkg headers ===" >> /tmp/diag/report.txt
           find /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/include -type f -name "*.h" 2>/dev/null | sort >> /tmp/diag/report.txt
+          echo "(none)" >> /tmp/diag/report.txt
           echo "" >> /tmp/diag/report.txt
-          echo "Vcpkg libs:" >> /tmp/diag/report.txt
+          echo "=== Vcpkg libs ===" >> /tmp/diag/report.txt
           ls -la /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/lib/ 2>/dev/null >> /tmp/diag/report.txt
+          echo "(none)" >> /tmp/diag/report.txt
+          echo "" >> /tmp/diag/report.txt
+          echo "=== Full build log (last 50 lines) ===" >> /tmp/diag/report.txt
+          tail -50 /tmp/build-output.log 2>/dev/null >> /tmp/diag/report.txt
 
       - name: Upload diagnostic artifact
         if: failure()
