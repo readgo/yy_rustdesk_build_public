@@ -117,7 +117,8 @@ jobs:
           YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL }}
           YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY }}
         run: |
-          bash flutter/build_light.sh
+          bash flutter/build_light.sh 2>&1 | tee /tmp/build-output.log
+          exit ${PIPESTATUS[0]}
 
       - name: Extract version
         run: |
@@ -148,6 +149,11 @@ jobs:
           {
             echo "# CI Diagnostic - ${{ github.ref_name }}"
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "## Build output (last 100 lines)"
+            echo '```'
+            tail -100 /tmp/build-output.log 2>/dev/null || echo "(build log not found)"
+            echo '```'
             echo ""
             echo "## Vcpkg arm64-android include tree"
             echo '```'
