@@ -138,6 +138,16 @@ jobs:
           echo "APK: dist/$APK_NAME"
           ls -lh "dist/$APK_NAME"
 
+      - name: Upload vcpkg diagnostic (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcpkg-diagnostic
+          path: |
+            /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/include/
+            /home/runner/.yy_rustdesk_env/vcpkg/installed/arm64-android/
+          retention-days: 3
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
