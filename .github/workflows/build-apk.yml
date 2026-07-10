@@ -117,29 +117,6 @@ jobs:
           path: /tmp/diag/
           retention-days: 3
 
-      - name: Extract version
-        run: |
-          VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
-          echo "YY_VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Rename APK
-        run: |
-          echo "=== 查找 APK ==="
-          pwd
-          echo "--- flutter 输出目录 ---"
-          ls -la flutter/build/app/outputs/flutter-apk/ 2>/dev/null || echo "目录不存在"
-          echo "--- 搜索所有 .apk ---"
-          find . -name "*.apk" -type f 2>/dev/null | head -10
-          APK_SRC=$(find . -name "*.apk" -type f 2>/dev/null | head -1)
-          if [ -z "$APK_SRC" ]; then
-            echo "ERROR: no APK found"
-            exit 1
-          fi
-          mkdir -p dist
-          APK_NAME="YYDesk-${{ env.YY_VERSION }}.apk"
-          cp "$APK_SRC" "dist/$APK_NAME"
-          echo "APK: $APK_NAME"
-          ls -lh "dist/$APK_NAME"
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
