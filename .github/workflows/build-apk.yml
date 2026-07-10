@@ -36,6 +36,31 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq nasm libclang-17-dev
 
+      - name: Setup Android SDK
+        run: |
+          SDK_DIR="$HOME/android-sdk"
+          if [ ! -d "$SDK_DIR/cmdline-tools" ]; then
+            mkdir -p "$SDK_DIR"
+            curl -# -L -o /tmp/cmdline-tools.zip \
+              "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline
+            mkdir -p "$SDK_DIR/cmdline-tools"
+            mv /tmp/cmdline/cmdline-tools "$SDK_DIR/cmdline-tools/latest"
+            rm -rf /tmp/cmdline-tools.zip /tmp/cmdline
+          fi
+          export ANDROID_HOME="$SDK_DIR"
+          export ANDROID_SDK_ROOT="$SDK_DIR"
+          echo "ANDROID_HOME=$SDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> $GITHUB_ENV
+          # Accept licenses
+          yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          # Install required SDK components
+          "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "platform-tools" >/dev/null 2>&1 || true
+          echo "Android SDK ready"
+
       - name: Setup Rust Android targets
         run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi
