@@ -17,8 +17,19 @@ jobs:
     steps:
       - name: Clone source
         run: |
-          git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
-            "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" .
+          RETRIES=3
+          for i in $(seq 1 $RETRIES); do
+            echo "尝试克隆（第 $i 次）..."
+            git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
+              "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" . && break
+            if [ $i -lt $RETRIES ]; then
+              echo "克隆失败，等待 10 秒后重试..."
+              sleep 10
+            else
+              echo "ERROR: 克隆失败 $RETRIES 次"
+              exit 1
+            fi
+          done
 
       - name: Install system dependencies
         run: |
