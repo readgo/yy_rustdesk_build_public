@@ -80,6 +80,22 @@ jobs:
           # 跑 build_light.sh
           echo "=== 开始 build_light.sh ==="
           bash flutter/build_light.sh
+
+          # APK 重命名（放在同一个步骤里，失败也能被 tee 捕获）
+          echo "=== 查找 APK ==="
+          find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
+          APK_SRC=$(find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null | head -1)
+          if [ -z "$APK_SRC" ]; then
+            echo "ERROR: no APK found after build"
+            exit 1
+          fi
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
+          APK_NAME="YYDesk-${VERSION}.apk"
+          cp "$APK_SRC" "$GITHUB_WORKSPACE/dist/$APK_NAME"
+          echo "APK: dist/$APK_NAME"
+          ls -lh "$GITHUB_WORKSPACE/dist/$APK_NAME"
+          echo "YY_VERSION=$VERSION" >> $GITHUB_ENV
           } 2>&1 | tee /tmp/build-output.log
 
       - name: Upload diagnostic (on failure)
