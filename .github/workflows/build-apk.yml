@@ -50,44 +50,39 @@ jobs:
           mkdir -p "$HOME/.yy_rustdesk_env"
           ln -sf /usr/local/lib/android/sdk "$HOME/.yy_rustdesk_env/android-sdk" 2>/dev/null || true
 
-      - name: Configure Gradle for offline build
+      - name: Pre-cache Gradle distribution
         run: |
-          # distributionUrl HTTPS→HTTP（CI 环境 SSL 受限）
+          # 获取 Gradle 版本
           PROP="flutter/android/gradle/wrapper/gradle-wrapper.properties"
-          if [ -f "$PROP" ]; then
-            echo "修改前: $(grep distributionUrl $PROP)"
-            sed -i 's|https://services.gradle.org|http://services.gradle.org|g' "$PROP"
-            echo "修改后: $(grep distributionUrl $PROP)"
+          GRADLE_VER=$(grep -oP 'gradle-\K[^/]+(?=-bin.zip)' "$PROP" 2>/dev/null || echo "7.6.4")
+          echo "Gradle 版本: $GRADLE_VER"
+          # 从原始 URL 下载（Gradle 接受 HTTP 但会重定向 HTTPS，curl 可以处理）
+          curl -sL -o /tmp/gradle-bin.zip \
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" 2>&1 || \
+          curl -sL -o /tmp/gradle-bin.zip \
+            "http://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" 2>&1
+          if [ -f /tmp/gradle-bin.zip ] && [ -s /tmp/gradle-bin.zip ]; then
+            echo "下载成功 ($(ls -lh /tmp/gradle-bin.zip | awk '{print $5}'))"
+            unzip -qo /tmp/gradle-bin.zip -d /tmp/gradle-extracted
+            GRADLE_DIR="/tmp/gradle-extracted/gradle-${GRADLE_VER}"
+            # 创建 wrapper 期望的缓存结构
+            WRAPPER_HASH=$(echo -n "distributionBase=GRADLE_USER_HOME&distributionPath=wrapper/dists&distributionUrl=https\\://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip&json=1" | sha256sum | cut -d' ' -f1)
+            CACHE_DIR="$HOME/.gradle/wrapper/dists/gradle-${GRADLE_VER}-bin/$WRAPPER_HASH"
+            mkdir -p "$CACHE_DIR"
+            ln -sf "$GRADLE_DIR" "$CACHE_DIR/" 2>/dev/null || cp -r "$GRADLE_DIR" "$CACHE_DIR/"
+            echo "Gradle 缓存就绪: $CACHE_DIR"
+          else
+            echo "下载失败，将用系统 gradle"
+            # 替换 gradlew 使用系统 gradle
+            if command -v gradle &>/dev/null; then
+              echo "使用系统 Gradle: $(which gradle)"
+              cat > flutter/android/gradlew << 'S'
+          #!/bin/bash
+          exec "`which gradle`" "$@"
+          S
+              chmod +x flutter/android/gradlew
+            fi
           fi
-          # 所有仓库 HTTPS→HTTP
-          mkdir -p ~/.gradle/init.d
-          cat > ~/.gradle/init.d/offline.gradle << 'GROOVY'
-          gradle.projectsLoaded {
-            rootProject.allprojects {
-              buildscript.repositories {
-                all { repo ->
-                  if (repo instanceof MavenArtifactRepository) {
-                    String url = repo.url.toString()
-                    if (url.startsWith('https://')) {
-                      repo.setUrl(url.replace('https://', 'http://'))
-                    }
-                  }
-                }
-              }
-              repositories {
-                all { repo ->
-                  if (repo instanceof MavenArtifactRepository) {
-                    String url = repo.url.toString()
-                    if (url.startsWith('https://') && !url.contains('localhost')) {
-                      repo.setUrl(url.replace('https://', 'http://'))
-                    }
-                  }
-                }
-              }
-            }
-          }
-          GROOVY
-          echo "Gradle 配置完成"
 
       - name: Setup Rust Android targets
         run: |
