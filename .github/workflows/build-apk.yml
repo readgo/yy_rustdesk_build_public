@@ -34,7 +34,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nasm libclang-17-dev gradle
+          sudo apt-get install -y -qq nasm libclang-17-dev
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -52,37 +52,19 @@ jobs:
 
       - name: Pre-cache Gradle distribution
         run: |
-          PROP="flutter/android/gradle/wrapper/gradle-wrapper.properties"
-          GRADLE_VER=$(grep -oP 'gradle-\K[^/]+(?=-bin.zip)' "$PROP" 2>/dev/null || echo "7.6.4")
-          DIST_URL=$(grep -oP 'distributionUrl=\K.*' "$PROP" 2>/dev/null || echo "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip")
-          echo "Gradle: $GRADLE_VER"
-          echo "URL: $DIST_URL"
+          # 安装系统 Gradle（从 apt，不需要网络证书）
+          sudo apt-get install -y -qq gradle
+          GRADLE_BIN=$(which gradle 2>/dev/null || echo "/usr/bin/gradle")
+          echo "系统 Gradle: $GRADLE_BIN"
+          $GRADLE_BIN --version 2>&1 | head -2
 
-          # 用 curl 下载
-          curl -sL -o /tmp/gradle-bin.zip "$DIST_URL" 2>&1 || \
-          curl -sL -o /tmp/gradle-bin.zip "${DIST_URL/https/http}" 2>&1
-
-          if [ -f /tmp/gradle-bin.zip ] && [ -s /tmp/gradle-bin.zip ]; then
-            echo "下载成功 ($(stat --format=%s /tmp/gradle-bin.zip) bytes)"
-            unzip -qo /tmp/gradle-bin.zip -d /tmp/gradle-extracted
-            # 计算 wrapper 缓存哈希（直接匹配原始 distributionUrl）
-            HASH_INPUT="distributionBase=GRADLE_USER_HOME&distributionPath=wrapper/dists&distributionUrl=${DIST_URL}&json=1"
-            WRAPPER_HASH=$(echo -n "$HASH_INPUT" | sha256sum | cut -d' ' -f1)
-            CACHE_DIR="$HOME/.gradle/wrapper/dists/gradle-${GRADLE_VER}-bin/$WRAPPER_HASH"
-            mkdir -p "$CACHE_DIR"
-            cp -r "/tmp/gradle-extracted/gradle-${GRADLE_VER}"/* "$CACHE_DIR/"
-            echo "Gradle 缓存: $CACHE_DIR ($(ls "$CACHE_DIR" | wc -l) files)"
-          else
-            echo "下载失败，使用系统 gradle"
-            if command -v gradle &>/dev/null; then
-              cat > flutter/android/gradlew << 'S'
+          # 替换 gradlew 跳过 wrapper 直接使用系统 gradle
+          cat > flutter/android/gradlew << 'SCRIPT'
           #!/bin/bash
-          exec "$(which gradle)" "$@"
-          S
-              chmod +x flutter/android/gradlew
-              echo "gradlew 已替换为系统 gradle"
-            fi
-          fi
+          exec /usr/bin/gradle "$@"
+          SCRIPT
+          chmod +x flutter/android/gradlew
+          echo "gradlew 已替换"
 
       - name: Setup Rust Android targets
         run: |
