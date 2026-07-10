@@ -23,8 +23,58 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            nasm libclang-17-dev
+          sudo apt-get install -y -qq nasm libclang-17-dev
+
+      - name: Setup NDK + vcpkg + deps
+        run: |
+          set -ex
+          BUILD_ENV_DIR="$HOME/.yy_rustdesk_env"
+          mkdir -p "$BUILD_ENV_DIR"
+
+          # NDK r23b
+          NDK_DIR="$BUILD_ENV_DIR/android-ndk-r23b"
+          if [ ! -d "$NDK_DIR" ]; then
+            curl -# -L -o /tmp/ndk-r23b.zip \
+              "https://dl.google.com/android/repository/android-ndk-r23b-linux.zip"
+            unzip -q /tmp/ndk-r23b.zip -d "$BUILD_ENV_DIR"
+            rm -f /tmp/ndk-r23b.zip
+          fi
+          export ANDROID_NDK_HOME="$NDK_DIR"
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+
+          # vcpkg
+          VCPKG_DIR="$BUILD_ENV_DIR/vcpkg"
+          if [ ! -x "$VCPKG_DIR/vcpkg" ]; then
+            git clone https://github.com/microsoft/vcpkg.git "$VCPKG_DIR"
+            "$VCPKG_DIR/bootstrap-vcpkg.sh" -disableMetrics
+          fi
+          export VCPKG_ROOT="$VCPKG_DIR"
+          echo "VCPKG_ROOT=$VCPKG_DIR" >> $GITHUB_ENV
+
+          VCPKG_INSTALLED_DIR="$BUILD_ENV_DIR/vcpkg_installed"
+          export VCPKG_INSTALLED_ROOT="$VCPKG_INSTALLED_DIR"
+          echo "VCPKG_INSTALLED_ROOT=$VCPKG_INSTALLED_DIR" >> $GITHUB_ENV
+
+          # 从仓库根目录运行 vcpkg install → 读取 vcpkg.json manifest
+          cd "$GITHUB_WORKSPACE"
+
+          # arm64-android
+          if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include" ]; then
+            "$VCPKG_DIR/vcpkg" install --triplet arm64-android \
+              --x-install-root="$VCPKG_INSTALLED_DIR"
+          fi
+
+          # arm-neon-android  
+          if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include" ]; then
+            "$VCPKG_DIR/vcpkg" install --triplet arm-neon-android \
+              --x-install-root="$VCPKG_INSTALLED_DIR"
+          fi
+
+          # 验证
+          echo "=== arm64-android headers ==="
+          find "$VCPKG_INSTALLED_DIR/arm64-android/include" -name "*.h" 2>/dev/null | head -20
+          echo "=== arm64-android libs ==="
+          ls "$VCPKG_INSTALLED_DIR/arm64-android/lib/" 2>/dev/null
 
       - name: Build APK (via build_light.sh)
         env:
@@ -40,19 +90,19 @@ jobs:
         if: failure()
         run: |
           mkdir -p /tmp/diag
-          echo "=== vcpkg install log ===" > /tmp/diag/report.txt
-          grep -n "vcpkg\|Vcpkg\|NDK\|ndk\|error\|Error\|FAIL\|fail\|installed" /tmp/build-output.log 2>/dev/null | tail -60 >> /tmp/diag/report.txt
-          echo "" >> /tmp/diag/report.txt
-          echo "=== Vcpkg headers ===" >> /tmp/diag/report.txt
-          find /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/include -type f -name "*.h" 2>/dev/null | sort >> /tmp/diag/report.txt
-          echo "(none)" >> /tmp/diag/report.txt
-          echo "" >> /tmp/diag/report.txt
-          echo "=== Vcpkg libs ===" >> /tmp/diag/report.txt
-          ls -la /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/lib/ 2>/dev/null >> /tmp/diag/report.txt
-          echo "(none)" >> /tmp/diag/report.txt
-          echo "" >> /tmp/diag/report.txt
-          echo "=== Full build log (last 50 lines) ===" >> /tmp/diag/report.txt
-          tail -50 /tmp/build-output.log 2>/dev/null >> /tmp/diag/report.txt
+          {
+            echo "=== vcpkg install phase ==="
+            grep -n "vcpkg\|Vcpkg\|NDK\|ndk\|checking\|依赖\|arm64\|arm-neon\|error\|Error\|FAIL\|exit" /tmp/build-output.log 2>/dev/null | tail -60
+            echo ""
+            echo "=== Vcpkg arm64-android include tree ==="
+            find /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/include -type f -name "*.h" 2>/dev/null | sort || echo "(empty)"
+            echo ""
+            echo "=== Vcpkg arm64-android libs ==="
+            ls -la /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/lib/ 2>/dev/null || echo "(empty)"
+            echo ""
+            echo "=== Last 80 lines of build log ==="
+            tail -80 /tmp/build-output.log 2>/dev/null
+          } > /tmp/diag/report.txt
 
       - name: Upload diagnostic artifact
         if: failure()
