@@ -52,19 +52,22 @@ jobs:
 
       - name: Pre-cache Gradle distribution
         run: |
-          # 安装系统 Gradle（从 apt，不需要网络证书）
-          sudo apt-get install -y -qq gradle
-          GRADLE_BIN=$(which gradle 2>/dev/null || echo "/usr/bin/gradle")
-          echo "系统 Gradle: $GRADLE_BIN"
-          $GRADLE_BIN --version 2>&1 | head -2
-
-          # 替换 gradlew 跳过 wrapper 直接使用系统 gradle
-          cat > flutter/android/gradlew << 'SCRIPT'
-          #!/bin/bash
-          exec /usr/bin/gradle "$@"
-          SCRIPT
-          chmod +x flutter/android/gradlew
-          echo "gradlew 已替换"
+          GRADLE_VER="7.6.4"
+          GH_RELEASE="https://github.com/gradle/gradle/releases/download/v${GRADLE_VER}/gradle-${GRADLE_VER}-bin.zip"
+          echo "从 GitHub Release 下载 Gradle $GRADLE_VER ..."
+          if curl -sL -o /tmp/gradle-bin.zip "$GH_RELEASE" && [ -s /tmp/gradle-bin.zip ]; then
+            echo "下载成功"
+            sudo unzip -qo /tmp/gradle-bin.zip -d /opt/
+            GRADLE_HOME="/opt/gradle-${GRADLE_VER}"
+            sudo ln -sf "$GRADLE_HOME/bin/gradle" /usr/local/bin/gradle 2>/dev/null || true
+            # 替换 gradlew，直接使用完整 Gradle 二进制（避免 wrapper 下载）
+            printf '#!/bin/bash\nexec %s/bin/gradle "$@"\n' "$GRADLE_HOME" > flutter/android/gradlew
+            chmod +x flutter/android/gradlew
+            "$GRADLE_HOME/bin/gradle" --version 2>&1 | head -2
+            echo "Gradle $GRADLE_VER 就绪 ($GRADLE_HOME)"
+          else
+            echo "GitHub 下载失败"
+          fi
 
       - name: Setup Rust Android targets
         run: |
