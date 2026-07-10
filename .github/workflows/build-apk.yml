@@ -108,6 +108,12 @@ jobs:
           ls -lh "$GITHUB_WORKSPACE/dist/$APK_NAME"
           echo "YY_VERSION=$VERSION" >> $GITHUB_ENV
           } 2>&1 | tee /tmp/build-output.log
+          # 管道会屏蔽 set -e，必须显式检查退出码
+          exit_code=${PIPESTATUS[0]}
+          if [ $exit_code -ne 0 ]; then
+            echo "BUILD FAILED (exit=$exit_code), aborting"
+            exit $exit_code
+          fi
 
       - name: Upload diagnostic (on failure)
         if: failure()
