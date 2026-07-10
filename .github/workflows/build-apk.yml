@@ -48,8 +48,25 @@ jobs:
       - name: Link Android SDK for build_light.sh
         run: |
           # build_light.sh 把 ANDROID_HOME 设为 $BUILD_ENV_DIR/android-sdk
-          # setup-android 装到 /usr/local/lib/android/sdk
+          mkdir -p "$HOME/.yy_rustdesk_env"
           ln -sf /usr/local/lib/android/sdk "$HOME/.yy_rustdesk_env/android-sdk" 2>/dev/null || true
+
+      - name: Configure Gradle for SSL
+        run: |
+          mkdir -p ~/.gradle
+          cat > ~/.gradle/gradle.properties << 'EOF'
+          org.gradle.daemon=false
+          org.gradle.jvmargs=-Xmx2048m -Dorg.gradle.internal.launcher.welcomeMessageEnabled=false
+          systemProp.javax.net.ssl.trustStore=/usr/lib/jvm/temurin-17-jdk-amd64/lib/security/cacerts
+          systemProp.javax.net.ssl.trustStorePassword=changeit
+          EOF
+          # 预下载 Gradle 发行版（避免 SSL 下载失败）
+          cd "$GITHUB_WORKSPACE"
+          GRADLE_VERSION=$(grep -oP 'gradle-\K[^/]+(?=-bin.zip)' flutter/android/gradle/wrapper/gradle-wrapper.properties 2>/dev/null || echo "8.0")
+          echo "Gradle 版本: $GRADLE_VERSION"
+          if [ ! -d "$HOME/.gradle/wrapper/dists/gradle-${GRADLE_VERSION}-bin" ]; then
+            curl -sL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip 2>/dev/null || true
+          fi
 
       - name: Setup Rust Android targets
         run: |
