@@ -78,6 +78,8 @@ jobs:
               "libvpx:arm64-android" \
               "libyuv:arm64-android" \
               "aom:arm64-android" \
+              "oboe:arm64-android" \
+              "cpu-features:arm64-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
           if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include/opus" ]; then
@@ -87,6 +89,8 @@ jobs:
               "libvpx:arm-neon-android" \
               "libyuv:arm-neon-android" \
               "aom:arm-neon-android" \
+              "oboe:arm-neon-android" \
+              "cpu-features:arm-neon-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
 
@@ -95,6 +99,19 @@ jobs:
           find "$VCPKG_INSTALLED_DIR/arm64-android/include" -name "*.h" 2>/dev/null | wc -l
           echo "=== arm64 libs ==="
           ls "$VCPKG_INSTALLED_DIR/arm64-android/lib/" 2>/dev/null | wc -l
+          
+          # 用空桩替换 oboe 库（避免与 oboe-sys crate 编译的版本重复符号）
+          for triplet in arm64-android arm-neon-android; do
+            OBOE_DIR="$VCPKG_INSTALLED_DIR/$triplet/lib"
+            if [ -f "$OBOE_DIR/liboboe.a" ]; then
+              echo "替换 $triplet/liboboe.a 为空桩"
+              rm -f "$OBOE_DIR/liboboe.a" "$OBOE_DIR/liboboe.so"
+              # 创建空的目标文件
+              echo '' | "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang" -c -x c - -o /tmp/oboe_stub.o 2>/dev/null || touch /tmp/oboe_stub.o
+              "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" crs "$OBOE_DIR/liboboe.a" /tmp/oboe_stub.o 2>/dev/null || true
+              rm -f /tmp/oboe_stub.o
+            fi
+          done
 
           # 跑 build_light.sh
           echo "=== 开始 build_light.sh ==="
