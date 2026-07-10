@@ -171,14 +171,16 @@ jobs:
             echo '```'
           } > "$DIAG_FILE"
 
-          # 提交到 ci-logs 分支
+          # 提交到 GitHub yy_rustdesk_build_public 的 ci-logs 分支
           git config user.name "CI Bot"
           git config user.email "ci-bot@users.noreply.github.com"
-          git fetch origin ci-logs 2>/dev/null && git checkout ci-logs || git checkout --orphan ci-logs
+          GH_REPO="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/readgo/yy_rustdesk_build_public.git"
+          git remote add github "$GH_REPO" 2>/dev/null || git remote set-url github "$GH_REPO"
+          git fetch github ci-logs 2>/dev/null && git checkout ci-logs || git checkout --orphan ci-logs
           cp "$DIAG_FILE" "diagnostic-${{ github.run_id }}.md"
           git add "diagnostic-${{ github.run_id }}.md"
           git commit -m "diagnostic: ${{ github.ref_name }} [skip ci]"
-          git push origin ci-logs
+          git push github ci-logs
 
       - name: Create GitHub Release
         env:
