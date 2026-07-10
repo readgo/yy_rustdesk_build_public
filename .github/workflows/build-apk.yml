@@ -34,7 +34,9 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq nasm libclang-17-dev
+          sudo apt-get install -y -qq nasm libclang-17-dev ca-certificates-java
+          # 更新 Java 证书
+          sudo update-ca-certificates -f 2>/dev/null || true
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
