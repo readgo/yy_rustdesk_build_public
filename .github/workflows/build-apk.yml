@@ -138,20 +138,17 @@ jobs:
           echo "APK: dist/$APK_NAME"
           ls -lh "dist/$APK_NAME"
 
-      - name: Upload vcpkg diagnostic (on failure)
+      - name: Commit diagnostic logs to git
         if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: vcpkg-diagnostic
-          path: |
-            /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/include/
-            /home/runner/.yy_rustdesk_env/vcpkg/installed/arm64-android/
-          retention-days: 3
-
-      - name: Write diagnostic summary
-        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # 收集诊断信息
+          DIAG_FILE="/tmp/ci-diagnostic-${{ github.run_id }}.md"
           {
+            echo "# CI Diagnostic - ${{ github.ref_name }}"
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
             echo "## Vcpkg arm64-android include tree"
             echo '```'
             find /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/include -type f -name "*.h" 2>/dev/null | sort || echo "(empty)"
@@ -166,7 +163,16 @@ jobs:
             echo '```'
             ls -la /home/runner/.yy_rustdesk_env/vcpkg/installed/arm64-android/include/ 2>/dev/null || echo "symlink broken"
             echo '```'
-          } >> $GITHUB_STEP_SUMMARY
+          } > "$DIAG_FILE"
+
+          # 提交到 ci-logs 分支
+          git config user.name "CI Bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git fetch origin ci-logs 2>/dev/null && git checkout ci-logs || git checkout --orphan ci-logs
+          cp "$DIAG_FILE" "diagnostic-${{ github.run_id }}.md"
+          git add "diagnostic-${{ github.run_id }}.md"
+          git commit -m "diagnostic: ${{ github.ref_name }} [skip ci]"
+          git push origin ci-logs
 
       - name: Create GitHub Release
         env:
