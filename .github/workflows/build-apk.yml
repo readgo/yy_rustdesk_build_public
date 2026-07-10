@@ -36,6 +36,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq nasm libclang-17-dev
 
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
       - name: Setup Android SDK
         run: |
           SDK_DIR="$HOME/android-sdk"
