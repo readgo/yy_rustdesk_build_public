@@ -47,49 +47,43 @@ jobs:
 
       - name: Link Android SDK for build_light.sh
         run: |
-          # build_light.sh 把 ANDROID_HOME 设为 $BUILD_ENV_DIR/android-sdk
           mkdir -p "$HOME/.yy_rustdesk_env"
           ln -sf /usr/local/lib/android/sdk "$HOME/.yy_rustdesk_env/android-sdk" 2>/dev/null || true
 
-      - name: Configure Gradle
+      - name: Configure Gradle for offline build
         run: |
-          echo "=== 查找完整 Gradle ==="
-          # Ubuntu 24.04 上 gradle 包安装到 /usr/share/gradle/
-          GRADLE_DIR=$(ls -d /usr/share/gradle/gradle-* 2>/dev/null | head -1)
-          if [ -z "$GRADLE_DIR" ]; then
-            # 从下载的发行版中找
-            GRADLE_DIR=$(ls -d $HOME/.gradle/wrapper/dists/gradle-*/ 2>/dev/null | head -3)
+          # distributionUrl HTTPS→HTTP（CI 环境 SSL 受限）
+          PROP="flutter/android/gradle/wrapper/gradle-wrapper.properties"
+          if [ -f "$PROP" ]; then
+            echo "修改前: $(grep distributionUrl $PROP)"
+            sed -i 's|https://services.gradle.org|http://services.gradle.org|g' "$PROP"
+            echo "修改后: $(grep distributionUrl $PROP)"
           fi
-          echo "Gradle 目录: $GRADLE_DIR"
-          if [ -d "$GRADLE_DIR" ]; then
-            GRADLE_EXEC="$GRADLE_DIR/bin/gradle"
-            if [ -x "$GRADLE_EXEC" ]; then
-              echo "找到完整 Gradle: $GRADLE_EXEC"
-              "$GRADLE_EXEC" --version 2>&1 | head -3
-              # 替换 gradlew
-              cat > flutter/android/gradlew << SCRIPT
-          #!/bin/sh
-          exec "$GRADLE_EXEC" "\$@"
-          SCRIPT
-              chmod +x flutter/android/gradlew
-              echo "gradlew 已替换"
-            fi
-          fi
-          # 创建阿里云镜像配置
+          # 所有仓库 HTTPS→HTTP
           mkdir -p ~/.gradle/init.d
-          cat > ~/.gradle/init.d/mirror.gradle << 'GROOVY'
-          allprojects {
-            buildscript {
-              repositories {
-                maven { url 'https://maven.aliyun.com/repository/public' }
-                maven { url 'https://maven.aliyun.com/repository/google' }
-                maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+          cat > ~/.gradle/init.d/offline.gradle << 'GROOVY'
+          gradle.projectsLoaded {
+            rootProject.allprojects {
+              buildscript.repositories {
+                all { repo ->
+                  if (repo instanceof MavenArtifactRepository) {
+                    String url = repo.url.toString()
+                    if (url.startsWith('https://')) {
+                      repo.setUrl(url.replace('https://', 'http://'))
+                    }
+                  }
+                }
               }
-            }
-            repositories {
-              maven { url 'https://maven.aliyun.com/repository/public' }
-              maven { url 'https://maven.aliyun.com/repository/google' }
-              maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+              repositories {
+                all { repo ->
+                  if (repo instanceof MavenArtifactRepository) {
+                    String url = repo.url.toString()
+                    if (url.startsWith('https://') && !url.contains('localhost')) {
+                      repo.setUrl(url.replace('https://', 'http://'))
+                    }
+                  }
+                }
+              }
             }
           }
           GROOVY
