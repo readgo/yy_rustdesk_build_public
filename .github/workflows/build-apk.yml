@@ -65,7 +65,6 @@ jobs:
               "libvpx:arm64-android" \
               "libyuv:arm64-android" \
               "aom:arm64-android" \
-              "oboe:arm64-android" \
               "cpu-features:arm64-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
@@ -77,7 +76,6 @@ jobs:
               "libvpx:arm-neon-android" \
               "libyuv:arm-neon-android" \
               "aom:arm-neon-android" \
-              "oboe:arm-neon-android" \
               "cpu-features:arm-neon-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
