@@ -139,13 +139,11 @@ jobs:
           echo "APK: dist/$APK_NAME"
           ls -lh "dist/$APK_NAME"
 
-      - name: Commit diagnostic logs to git
+      - name: Save diagnostic logs
         if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # 收集诊断信息
-          DIAG_FILE="/tmp/ci-diagnostic-${{ github.run_id }}.md"
+          mkdir -p /tmp/diagnostic
           {
             echo "# CI Diagnostic - ${{ github.ref_name }}"
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -169,18 +167,15 @@ jobs:
             echo '```'
             ls -la /home/runner/.yy_rustdesk_env/vcpkg/installed/arm64-android/include/ 2>/dev/null || echo "symlink broken"
             echo '```'
-          } > "$DIAG_FILE"
+          } > /tmp/diagnostic/report.md
 
-          # 提交到 GitHub yy_rustdesk_build_public 的 ci-logs 分支
-          git config user.name "CI Bot"
-          git config user.email "ci-bot@users.noreply.github.com"
-          GH_REPO="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/readgo/yy_rustdesk_build_public.git"
-          git remote add github "$GH_REPO" 2>/dev/null || git remote set-url github "$GH_REPO"
-          git fetch github ci-logs 2>/dev/null && git checkout ci-logs || git checkout --orphan ci-logs
-          cp "$DIAG_FILE" "diagnostic-${{ github.run_id }}.md"
-          git add "diagnostic-${{ github.run_id }}.md"
-          git commit -m "diagnostic: ${{ github.ref_name }} [skip ci]"
-          git push github ci-logs
+      - name: Upload diagnostic artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-${{ github.run_id }}
+          path: /tmp/diagnostic/
+          retention-days: 3
 
       - name: Create GitHub Release
         env:
