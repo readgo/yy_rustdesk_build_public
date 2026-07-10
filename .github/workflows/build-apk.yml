@@ -72,7 +72,10 @@ jobs:
           YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL }}
           YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY }}
         run: |
-          {
+          set -e -o pipefail
+          exec 5>&1  # 保存原始 stdout
+          exec > >(tee /tmp/build-output.log) 2>&1
+          
           # 预装 NDK 和 vcpkg 依赖（与 build_light.sh 共享路径）
           export BUILD_ENV_DIR="$HOME/.yy_rustdesk_env"
           mkdir -p "$BUILD_ENV_DIR"
@@ -161,13 +164,6 @@ jobs:
           echo "APK: dist/$APK_NAME"
           ls -lh "$GITHUB_WORKSPACE/dist/$APK_NAME"
           echo "YY_VERSION=$VERSION" >> $GITHUB_ENV
-          } 2>&1 | tee /tmp/build-output.log
-          # 管道会屏蔽 set -e，必须显式检查退出码
-          exit_code=${PIPESTATUS[0]}
-          if [ $exit_code -ne 0 ]; then
-            echo "BUILD FAILED (exit=$exit_code), aborting"
-            exit $exit_code
-          fi
 
       - name: Upload diagnostic (on failure)
         if: failure()
