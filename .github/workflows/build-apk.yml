@@ -51,20 +51,51 @@ jobs:
           mkdir -p "$HOME/.yy_rustdesk_env"
           ln -sf /usr/local/lib/android/sdk "$HOME/.yy_rustdesk_env/android-sdk" 2>/dev/null || true
 
-      - name: Configure Gradle for SSL
+      - name: Configure Gradle
         run: |
-          mkdir -p ~/.gradle/init.d
-          # 替换 Gradle 发行版下载地址为 mirrors.cloud.tencent.com（阿里云可能有反爬限制）
+          # 获取 Gradle 版本
           PROP="flutter/android/gradle/wrapper/gradle-wrapper.properties"
-          if [ -f "$PROP" ]; then
-            echo "原始 distributionUrl:"
-            grep distributionUrl "$PROP"
-            # 替换为华为云镜像
-            sed -i 's|services.gradle.org/distributions|repo.huaweicloud.com/gradle|g' "$PROP"
-            sed -i 's|downloads.gradle.org/distributions|repo.huaweicloud.com/gradle|g' "$PROP"
-            echo "修改后:"
-            grep distributionUrl "$PROP"
+          GRADLE_VERSION=$(grep -oP 'gradle-\K[^/]+(?=-bin.zip)' "$PROP" 2>/dev/null || echo "7.6.4")
+          echo "Gradle 版本: $GRADLE_VERSION"
+
+          # 用 curl -k 跳过 SSL 验证预先下载 Gradle
+          GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          echo "下载: $GRADLE_URL"
+          curl -k -sL "$GRADLE_URL" -o "/tmp/gradle-${GRADLE_VERSION}-bin.zip" || {
+            echo "HTTPS 失败，尝试从华为云下载..."
+            curl -k -sL "https://repo1.maven.org/maven2/org/gradle/gradle-wrapper/gradle/${GRADLE_VERSION}/gradle-${GRADLE_VERSION}-bin.zip" -o "/tmp/gradle-${GRADLE_VERSION}-bin.zip"
+          }
+
+          if [ -f "/tmp/gradle-${GRADLE_VERSION}-bin.zip" ] && [ -s "/tmp/gradle-${GRADLE_VERSION}-bin.zip" ]; then
+            echo "Gradle 发行版下载成功，大小: $(ls -lh /tmp/gradle-${GRADLE_VERSION}-bin.zip | awk '{print $5}')"
+            # 解压到 gradle 用户目录
+            unzip -qo "/tmp/gradle-${GRADLE_VERSION}-bin.zip" -d "/tmp/gradle-install"
+            # 创建 wrapper 期望的目录结构并缓存
+            mkdir -p "$HOME/.gradle/wrapper/dists"
+            cp "/tmp/gradle-${GRADLE_VERSION}-bin.zip" "$HOME/.gradle/wrapper/dists/"
+          else
+            echo "Gradle 下载失败，将让 wrapper 自行处理"
           fi
+
+          # 创建 init.d 阿里云镜像配置
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/mirror.gradle << 'GROOVY'
+          allprojects {
+            buildscript {
+              repositories {
+                maven { url 'https://maven.aliyun.com/repository/public' }
+                maven { url 'https://maven.aliyun.com/repository/google' }
+                maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+              }
+            }
+            repositories {
+              maven { url 'https://maven.aliyun.com/repository/public' }
+              maven { url 'https://maven.aliyun.com/repository/google' }
+              maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+            }
+          }
+          GROOVY
+          echo "Gradle 配置完成"
 
       - name: Setup Rust Android targets
         run: |
