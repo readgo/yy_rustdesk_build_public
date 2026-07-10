@@ -26,64 +26,6 @@ jobs:
           sudo apt-get install -y -qq \
             nasm libclang-17-dev
 
-      - name: Setup vcpkg + NDK + deps
-        run: |
-          set -e
-          BUILD_ENV_DIR="$HOME/.yy_rustdesk_env"
-          mkdir -p "$BUILD_ENV_DIR"
-
-          NDK_DIR="$BUILD_ENV_DIR/android-ndk-r23b"
-          if [ ! -d "$NDK_DIR" ]; then
-            echo "下载 NDK r23b..."
-            curl -# -L -o /tmp/ndk-r23b.zip \
-              "https://dl.google.com/android/repository/android-ndk-r23b-linux.zip"
-            unzip -q /tmp/ndk-r23b.zip -d "$BUILD_ENV_DIR"
-            rm -f /tmp/ndk-r23b.zip
-          fi
-          export ANDROID_NDK_HOME="$NDK_DIR"
-          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
-
-          VCPKG_DIR="$BUILD_ENV_DIR/vcpkg"
-          if [ ! -x "$VCPKG_DIR/vcpkg" ]; then
-            echo "下载 vcpkg..."
-            git clone https://github.com/microsoft/vcpkg.git "$VCPKG_DIR"
-            "$VCPKG_DIR/bootstrap-vcpkg.sh" -disableMetrics
-          fi
-          export VCPKG_ROOT="$VCPKG_DIR"
-          echo "VCPKG_ROOT=$VCPKG_DIR" >> $GITHUB_ENV
-
-          VCPKG_INSTALLED_DIR="$BUILD_ENV_DIR/vcpkg_installed"
-          export VCPKG_INSTALLED_ROOT="$VCPKG_INSTALLED_DIR"
-          echo "VCPKG_INSTALLED_ROOT=$VCPKG_INSTALLED_DIR" >> $GITHUB_ENV
-
-          cd "$GITHUB_WORKSPACE"
-
-          if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include/opus" ]; then
-            echo "安装 arm64-android 依赖..."
-            "$VCPKG_DIR/vcpkg" install --classic \
-              "opus:arm64-android" \
-              "libvpx:arm64-android" \
-              "libyuv:arm64-android" \
-              "aom:arm64-android" \
-              "cpu-features:arm64-android" \
-              --x-install-root="$VCPKG_INSTALLED_DIR"
-          fi
-
-          if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include/opus" ]; then
-            echo "安装 arm-neon-android 依赖..."
-            "$VCPKG_DIR/vcpkg" install --classic \
-              "opus:arm-neon-android" \
-              "libvpx:arm-neon-android" \
-              "libyuv:arm-neon-android" \
-              "aom:arm-neon-android" \
-              "cpu-features:arm-neon-android" \
-              --x-install-root="$VCPKG_INSTALLED_DIR"
-          fi
-
-          mkdir -p "$VCPKG_DIR/installed"
-          ln -sf "$VCPKG_INSTALLED_DIR/arm64-android" "$VCPKG_DIR/installed/arm64-android" 2>/dev/null || true
-          ln -sf "$VCPKG_INSTALLED_DIR/arm-neon-android" "$VCPKG_DIR/installed/arm-android" 2>/dev/null || true
-
       - name: Build APK (via build_light.sh)
         env:
           YY_SERVER_URL: ${{ secrets.YY_SERVER_URL }}
@@ -106,9 +48,6 @@ jobs:
           echo "" >> /tmp/diag/report.txt
           echo "Vcpkg libs:" >> /tmp/diag/report.txt
           ls -la /home/runner/.yy_rustdesk_env/vcpkg_installed/arm64-android/lib/ 2>/dev/null >> /tmp/diag/report.txt
-          echo "" >> /tmp/diag/report.txt
-          echo "Symlink:" >> /tmp/diag/report.txt
-          ls -la /home/runner/.yy_rustdesk_env/vcpkg/installed/arm64-android/include/ 2>/dev/null >> /tmp/diag/report.txt
 
       - name: Upload diagnostic artifact
         if: failure()
