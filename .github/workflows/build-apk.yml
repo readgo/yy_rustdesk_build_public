@@ -226,11 +226,14 @@ jobs:
           find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
           printf 'YYDesk v%s Android APK\n\n### 安装\n下载 APK 后，在 Android 设备上安装即可。\n首次安装需在系统设置中允许「未知来源应用」。\n\n### 架构\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)' "$VERSION" > /tmp/release-notes.md
           echo "=== 创建 Release ==="
+          # 先用 gh api 测试 token 权限
+          gh api /repos/${{ github.repository }}/releases --method GET -q '.[0].tag_name' 2>&1 || echo "gh api get 失败"
+          echo "--- 尝试创建 release ---"
           gh release create "$TAG" \
             "$GITHUB_WORKSPACE/dist/"*.apk \
             --title "YYDesk v$VERSION" \
             --notes-file /tmp/release-notes.md \
             --generate-notes \
-            --repo "https://github.com/${{ github.repository }}" || echo "gh create 失败但继续"
-          echo "=== Release 完成 ==="
+            --repo "https://github.com/${{ github.repository }}" 2>&1 || echo "gh release 失败"
+          echo "=== Release 步骤结束 ==="
         shell: bash
