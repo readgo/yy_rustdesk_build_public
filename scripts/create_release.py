@@ -5,7 +5,7 @@ import json, os, sys, urllib.request, urllib.error
 tag = sys.argv[1]
 version = sys.argv[2]
 repo = sys.argv[3] if len(sys.argv) > 3 else os.environ.get("GITHUB_REPOSITORY", "")
-token = sys.argv[4] if len(sys.argv) > 4 else os.environ.get("GITHUB_TOKEN", "")
+token = sys.argv[4] if len(sys.argv) > 4 else os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN", "")
 
 if not repo or not token:
     print("ERROR: Missing repo or token")
