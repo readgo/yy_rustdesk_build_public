@@ -53,9 +53,10 @@ jobs:
       - name: Pre-cache Gradle distribution
         run: |
           GRADLE_VER="7.6.4"
-          GH_RELEASE="https://github.com/gradle/gradle/releases/download/gradle-${GRADLE_VER}/gradle-${GRADLE_VER}-bin.zip"
-          echo "从 GitHub Release 下载 Gradle $GRADLE_VER ..."
-          if curl -sL -o /tmp/gradle-bin.zip "$GH_RELEASE" && [ -s /tmp/gradle-bin.zip ]; then
+          # 使用 HTTP（CI HTTPS 受限）替代 GitHub Release
+          GH_RELEASE="http://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip"
+          echo "下载 Gradle $GRADLE_VER (HTTP) ..."
+          if curl -sL --connect-timeout 30 --max-time 300 -o /tmp/gradle-bin.zip "$GH_RELEASE" && [ -s /tmp/gradle-bin.zip ]; then
             echo "下载成功"
             sudo unzip -qo /tmp/gradle-bin.zip -d /opt/
             GRADLE_HOME="/opt/gradle-${GRADLE_VER}"
