@@ -224,16 +224,64 @@ jobs:
           echo "--- APK files ---"
           find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
           printf 'YYDesk v%s Android APK\n\n### 安装\n下载 APK 后，在 Android 设备上安装即可。\n首次安装需在系统设置中允许「未知来源应用」。\n\n### 架构\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)\n' "$VERSION" > /tmp/release-notes.md
-          echo "=== 开始创建 Release ==="
-          gh release create "$TAG" \
-            "$GITHUB_WORKSPACE/dist/"*.apk \
-            --title "YYDesk v$VERSION" \
-            --notes-file /tmp/release-notes.md \
-            --generate-notes --repo "$GITHUB_REPOSITORY" 2>&1 | tee /tmp/gh-release.log
-          exit_code=${PIPESTATUS[0]}
-          if [ $exit_code -ne 0 ]; then
-            echo "创建失败 (exit=$exit_code)，尝试更新已有 Release..."
-            cat /tmp/gh-release.log
-            gh release upload "$TAG" "$GITHUB_WORKSPACE/dist/"*.apk --clobber --repo "$GITHUB_REPOSITORY" 2>&1 || echo "upload 失败"
-            gh release edit "$TAG" --notes-file /tmp/release-notes.md --repo "$GITHUB_REPOSITORY" 2>&1 || echo "edit 失败"
+          NOTES=$(cat /tmp/release-notes.md)
+
+          # 用 GitHub API 创建 Release（绕过 gh 的 git remote 检查）
+          echo "=== 创建 Release (API) ==="
+          API="https://api.github.com"
+          REPO="${{ github.repository }}"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+
+          # 1. 创建 Release
+          CREATE_RESP=$(curl -s -X POST "$API/repos/$REPO/releases" \
+            -H "Authorization: token $TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "$(cat <<EORELEASE
+          {
+            "tag_name": "$TAG",
+            "name": "YYDesk v$VERSION",
+            "body": "$NOTES",
+            "draft": false,
+            "prerelease": false,
+            "generate_release_notes": true
+          }
+          EORELEASE
+          )" 2>&1)
+
+          RELEASE_ID=$(echo "$CREATE_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id', 'ERROR'))" 2>/dev/null)
+          echo "Release ID: $RELEASE_ID"
+
+          if [ "$RELEASE_ID" = "ERROR" ]; then
+            echo "创建失败，输出:"
+            echo "$CREATE_RESP" | head -20
+            # 尝试查找已有 Release 并更新 body
+            echo "尝试查找已有 Release..."
+            GET_RESP=$(curl -s "$API/repos/$REPO/releases/tags/$TAG" \
+              -H "Authorization: token $TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" 2>&1)
+            RELEASE_ID=$(echo "$GET_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id', 'ERROR'))" 2>/dev/null)
+            if [ "$RELEASE_ID" != "ERROR" ]; then
+              echo "找到已有 Release ID: $RELEASE_ID，更新 body"
+              curl -s -X PATCH "$API/repos/$REPO/releases/$RELEASE_ID" \
+                -H "Authorization: token $TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                -d "{\"body\": \"$NOTES\"}" > /dev/null
+            fi
           fi
+
+          # 2. 上传 APK
+          if [ "$RELEASE_ID" != "ERROR" ]; then
+            echo "=== 上传 APK ==="
+            for apk in "$GITHUB_WORKSPACE/dist/"*.apk; do
+              if [ -f "$apk" ]; then
+                APK_NAME=$(basename "$apk")
+                echo "上传: $APK_NAME"
+                curl -s -X POST "$API/repos/$REPO/releases/$RELEASE_ID/assets?name=$APK_NAME" \
+                  -H "Authorization: token $TOKEN" \
+                  -H "Content-Type: application/vnd.android.package-archive" \
+                  --data-binary "@$apk" > /dev/null
+                echo "  上传完成"
+              fi
+            done
+          fi
+
