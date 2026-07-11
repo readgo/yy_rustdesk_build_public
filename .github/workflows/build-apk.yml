@@ -223,4 +223,4 @@ jobs:
           ls -la "$GITHUB_WORKSPACE/dist/" 2>/dev/null || echo "dist/ not found"
           echo "--- APK files ---"
           find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
-          python3 scripts/create_release.py "$TAG" "$VERSION"
+          python3 -c "$(curl -sL "https://raw.githubusercontent.com/readgo/yy_rustdesk_build_public/main/scripts/create_release.py")" "$TAG" "$VERSION"
