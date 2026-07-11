@@ -209,6 +209,8 @@ jobs:
           retention-days: 3
 
       - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -x
           TAG="${{ github.ref_name }}"
@@ -221,80 +223,4 @@ jobs:
           ls -la "$GITHUB_WORKSPACE/dist/" 2>/dev/null || echo "dist/ not found"
           echo "--- APK files ---"
           find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
-
-          python3 << PYEOF
-import json, os, urllib.request, urllib.error
-
-tag = "${TAG}"
-version = "${VERSION}"
-repo = "${{ github.repository }}"
-token = "${{ secrets.GITHUB_TOKEN }}"
-
-notes = "YYDesk v" + version + " Android APK"
-notes += "\n\n### \u5b89\u88c5\n\u4e0b\u8f7d APK \u540e\uff0c\u5728 Android \u8bbe\u5907\u4e0a\u5b89\u88c5\u5373\u53ef\u3002\n\u9996\u6b21\u5b89\u88c5\u9700\u5728\u7cfb\u7edf\u8bbe\u7f6e\u4e2d\u5141\u8bb8\u300c\u672a\u77e5\u6765\u6e90\u5e94\u7528\u300d\u3002\n\n### \u67b6\u6784\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)"
-
-api = f"https://api.github.com/repos/{repo}"
-headers = {
-    "Authorization": f"token {token}",
-    "Accept": "application/vnd.github.v3+json",
-}
-
-payload = {
-    "tag_name": tag,
-    "name": f"YYDesk v{version}",
-    "body": notes,
-    "draft": False,
-    "prerelease": False,
-}
-
-req = urllib.request.Request(
-    f"{api}/releases",
-    data=json.dumps(payload).encode(),
-    headers=headers,
-    method="POST",
-)
-try:
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
-        release_id = data.get("id")
-        print(f"Release created: ID={release_id}, tag={data.get(\"tag_name\")}")
-except urllib.error.HTTPError as e:
-    body = e.read().decode()
-    print(f"Create release failed: {e.code} {e.reason}")
-    print(f"Response: {body[:300]}")
-    # Try to find existing
-    try:
-        req2 = urllib.request.Request(f"{api}/releases/tags/{tag}", headers=headers)
-        with urllib.request.urlopen(req2, timeout=15) as resp2:
-            existing = json.loads(resp2.read())
-            release_id = existing.get("id")
-            print(f"Found existing release ID={release_id}")
-    except:
-        release_id = None
-except Exception as e:
-    print(f"Unexpected error: {e}")
-    release_id = None
-
-if release_id:
-    dist = os.path.expanduser("~/dist")
-    # Also check GITHUB_WORKSPACE
-    for base in [os.environ.get("GITHUB_WORKSPACE", ""), os.path.expanduser("~")]:
-        d = os.path.join(base, "dist") if base else ""
-        if d and os.path.isdir(d):
-            for fname in os.listdir(d):
-                if fname.endswith(".apk"):
-                    fpath = os.path.join(d, fname)
-                    size = os.path.getsize(fpath)
-                    print(f"Uploading: {fname} ({size} bytes)")
-                    with open(fpath, "rb") as f:
-                        req3 = urllib.request.Request(
-                            f"{api}/releases/{release_id}/assets?name={fname}",
-                            data=f.read(),
-                            headers={**headers, "Content-Type": "application/vnd.android.package-archive"},
-                            method="POST",
-                        )
-                        with urllib.request.urlopen(req3, timeout=120) as resp3:
-                            print(f"  Uploaded: {json.loads(resp3.read()).get(\"name\")}")
-else:
-    print("SKIP: no release ID to upload to")
-PYEOF
+          python3 scripts/create_release.py "$TAG" "$VERSION"
