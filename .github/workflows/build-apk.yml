@@ -210,7 +210,7 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -x
           TAG="${{ github.ref_name }}"
@@ -223,5 +223,66 @@ jobs:
           ls -la "$GITHUB_WORKSPACE/dist/" 2>/dev/null || echo "dist/ not found"
           echo "--- APK files ---"
           find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
-          curl -sL -o /tmp/create_release.py "https://raw.githubusercontent.com/readgo/yy_rustdesk_build_public/main/scripts/create_release.py"
-          python3 /tmp/create_release.py "$TAG" "$VERSION"
+
+      - name: Create GitHub Release via API
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ env.YY_VERSION }}
+        with:
+          script: |
+            const fs = require('fs');
+            const tag = process.env.TAG;
+            const version = process.env.VERSION || '${{ env.YY_VERSION }}';
+            const notes = 'YYDesk v' + version + ' Android APK\n\n### 安装\n下载 APK 后，在 Android 设备上安装即可。\n首次安装需在系统设置中允许「未知来源应用」。\n\n### 架构\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)';
+            
+            console.log('Creating release: tag=' + tag + ' version=' + version);
+            
+            // 1. Create release
+            let release;
+            try {
+              release = await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                name: 'YYDesk v' + version,
+                body: notes,
+                draft: false,
+                prerelease: false,
+              });
+              console.log('Release created: ID=' + release.data.id);
+            } catch (err) {
+              console.log('Create failed: ' + err.status + ' ' + err.message);
+              console.log('Trying to find existing release...');
+              const existing = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tag,
+              });
+              release = existing;
+              console.log('Found existing: ID=' + release.data.id);
+            }
+            
+            // 2. Upload APK
+            const dist = process.env.GITHUB_WORKSPACE + '/dist';
+            if (fs.existsSync(dist)) {
+              const files = fs.readdirSync(dist).filter(f => f.endsWith('.apk'));
+              for (const file of files) {
+                const fpath = dist + '/' + file;
+                const size = fs.statSync(fpath).size;
+                console.log('Uploading: ' + file + ' (' + size + ' bytes)');
+                const content = fs.readFileSync(fpath);
+                await github.rest.repos.uploadReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.data.id,
+                  name: file,
+                  data: content,
+                });
+                console.log('  Uploaded: ' + file);
+              }
+            } else {
+              console.log('dist directory not found: ' + dist);
+            }
+            
+            console.log('=== Release complete ===');
