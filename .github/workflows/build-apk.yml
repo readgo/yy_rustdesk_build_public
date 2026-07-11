@@ -231,5 +231,6 @@ jobs:
             --title "YYDesk v$VERSION" \
             --notes-file /tmp/release-notes.md \
             --generate-notes \
-            --repo "https://github.com/${{ github.repository }}"
+            --repo "https://github.com/${{ github.repository }}" || echo "gh create 失败但继续"
           echo "=== Release 完成 ==="
+        shell: bash
