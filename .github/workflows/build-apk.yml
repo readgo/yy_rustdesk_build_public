@@ -53,23 +53,26 @@ jobs:
       - name: Pre-cache Gradle distribution
         run: |
           GRADLE_VER="7.6.4"
-          # 使用 HTTP（CI HTTPS 受限）替代 GitHub Release
           GH_RELEASE="http://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip"
           echo "下载 Gradle $GRADLE_VER (HTTP) ..."
-          if curl -sL --connect-timeout 30 --max-time 300 -o /tmp/gradle-bin.zip "$GH_RELEASE" && [ -s /tmp/gradle-bin.zip ]; then
-            echo "下载成功"
-            sudo unzip -qo /tmp/gradle-bin.zip -d /opt/
-            GRADLE_HOME="/opt/gradle-${GRADLE_VER}"
-            # 替换 gradlew
-            echo '#!/bin/bash' > flutter/android/gradlew
-            echo 'exec /opt/gradle-'"${GRADLE_VER}"'/bin/gradle "$@"' >> flutter/android/gradlew
-            chmod +x flutter/android/gradlew
-            echo "gradlew 内容:"
-            cat flutter/android/gradlew
-            "$GRADLE_HOME/bin/gradle" --version 2>&1 | head -2
-            echo "Gradle $GRADLE_VER 就绪"
+          curl -sL --connect-timeout 30 --max-time 300 -o /tmp/gradle-bin.zip "$GH_RELEASE" &
+          CURL_PID=$!
+          # 等待 curl 完成，但最多等 5 分钟
+          wait $CURL_PID
+          if [ -f /tmp/gradle-bin.zip ] && [ -s /tmp/gradle-bin.zip ]; then
+            DOWNLOAD_SIZE=$(stat --format=%s /tmp/gradle-bin.zip 2>/dev/null || echo 0)
+            echo "下载成功 ($DOWNLOAD_SIZE bytes)"
+            if [ "$DOWNLOAD_SIZE" -gt 100000000 ]; then
+              sudo unzip -qo /tmp/gradle-bin.zip -d /opt/
+              echo '#!/bin/bash' > flutter/android/gradlew
+              echo "exec /opt/gradle-${GRADLE_VER}/bin/gradle" '"$@"' >> flutter/android/gradlew
+              chmod +x flutter/android/gradlew
+              echo "gradlew 已替换为完整 Gradle"
+            else
+              echo "文件太小 ($DOWNLOAD_SIZE)，不像是 Gradle 发行版"
+            fi
           else
-            echo "GitHub 下载失败"
+            echo "下载失败"
           fi
 
       - name: Setup Rust Android targets
