@@ -59,12 +59,14 @@ jobs:
             echo "下载成功"
             sudo unzip -qo /tmp/gradle-bin.zip -d /opt/
             GRADLE_HOME="/opt/gradle-${GRADLE_VER}"
-            sudo ln -sf "$GRADLE_HOME/bin/gradle" /usr/local/bin/gradle 2>/dev/null || true
-            # 替换 gradlew，直接使用完整 Gradle 二进制（避免 wrapper 下载）
-            printf '#!/bin/bash\nexec %s/bin/gradle "$@"\n' "$GRADLE_HOME" > flutter/android/gradlew
+            # 替换 gradlew
+            echo '#!/bin/bash' > flutter/android/gradlew
+            echo 'exec /opt/gradle-'"${GRADLE_VER}"'/bin/gradle "$@"' >> flutter/android/gradlew
             chmod +x flutter/android/gradlew
+            echo "gradlew 内容:"
+            cat flutter/android/gradlew
             "$GRADLE_HOME/bin/gradle" --version 2>&1 | head -2
-            echo "Gradle $GRADLE_VER 就绪 ($GRADLE_HOME)"
+            echo "Gradle $GRADLE_VER 就绪"
           else
             echo "GitHub 下载失败"
           fi
