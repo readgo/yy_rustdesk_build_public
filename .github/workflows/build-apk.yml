@@ -229,11 +229,11 @@ jobs:
             "$GITHUB_WORKSPACE/dist/"*.apk \
             --title "YYDesk v$VERSION" \
             --notes-file /tmp/release-notes.md \
-            --generate-notes 2>&1 | tee /tmp/gh-release.log
+            --generate-notes --repo "$GITHUB_REPOSITORY" 2>&1 | tee /tmp/gh-release.log
           exit_code=${PIPESTATUS[0]}
           if [ $exit_code -ne 0 ]; then
             echo "创建失败 (exit=$exit_code)，尝试更新已有 Release..."
             cat /tmp/gh-release.log
-            gh release upload "$TAG" "$GITHUB_WORKSPACE/dist/"*.apk --clobber 2>&1 || echo "upload 失败"
-            gh release edit "$TAG" --notes-file /tmp/release-notes.md 2>&1 || echo "edit 失败"
+            gh release upload "$TAG" "$GITHUB_WORKSPACE/dist/"*.apk --clobber --repo "$GITHUB_REPOSITORY" 2>&1 || echo "upload 失败"
+            gh release edit "$TAG" --notes-file /tmp/release-notes.md --repo "$GITHUB_REPOSITORY" 2>&1 || echo "edit 失败"
           fi
