@@ -56,23 +56,33 @@ jobs:
           GH_RELEASE="http://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip"
           echo "下载 Gradle $GRADLE_VER (HTTP) ..."
           curl -sL --connect-timeout 30 --max-time 300 -o /tmp/gradle-bin.zip "$GH_RELEASE" &
-          CURL_PID=$!
-          # 等待 curl 完成，但最多等 5 分钟
-          wait $CURL_PID
+          wait $!
           if [ -f /tmp/gradle-bin.zip ] && [ -s /tmp/gradle-bin.zip ]; then
-            DOWNLOAD_SIZE=$(stat --format=%s /tmp/gradle-bin.zip 2>/dev/null || echo 0)
-            echo "下载成功 ($DOWNLOAD_SIZE bytes)"
-            if [ "$DOWNLOAD_SIZE" -gt 100000000 ]; then
+            SIZE=$(stat --format=%s /tmp/gradle-bin.zip 2>/dev/null || echo 0)
+            echo "Gradle 下载: $SIZE bytes"
+            if [ "$SIZE" -gt 100000000 ]; then
               sudo unzip -qo /tmp/gradle-bin.zip -d /opt/
               echo '#!/bin/bash' > flutter/android/gradlew
               echo "exec /opt/gradle-${GRADLE_VER}/bin/gradle" '"$@"' >> flutter/android/gradlew
               chmod +x flutter/android/gradlew
-              echo "gradlew 已替换为完整 Gradle"
-            else
-              echo "文件太小 ($DOWNLOAD_SIZE)，不像是 Gradle 发行版"
             fi
-          else
-            echo "下载失败"
+          fi
+
+          # 生成调试用 keystore（key.properties 不在 git 里）
+          if [ ! -f flutter/android/key.properties ]; then
+            echo "生成 keystore..."
+            keytool -genkey -v -keystore /tmp/debug.keystore \
+              -alias yy_control -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass yy123456 -keypass yy123456 \
+              -dname "CN=CI, OU=YYDesk, O=YYDesk, L=Unknown, ST=Unknown, C=CN"
+            cp /tmp/debug.keystore flutter/android/yy_control.jks
+            cat > flutter/android/key.properties << 'PROPS'
+          storePassword=yy123456
+          keyPassword=yy123456
+          keyAlias=yy_control
+          storeFile=yy_control.jks
+          PROPS
+            echo "keystore 就绪"
           fi
 
       - name: Setup Rust Android targets
