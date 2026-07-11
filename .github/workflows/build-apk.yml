@@ -80,7 +80,7 @@ jobs:
           storePassword=yy123456
           keyPassword=yy123456
           keyAlias=yy_control
-          storeFile=yy_control.jks
+          storeFile=../yy_control.jks
           PROPS
             echo "keystore 就绪"
           fi
