@@ -53,7 +53,7 @@ jobs:
       - name: Pre-cache Gradle distribution
         run: |
           GRADLE_VER="7.6.4"
-          GH_RELEASE="https://github.com/gradle/gradle/releases/download/v${GRADLE_VER}/gradle-${GRADLE_VER}-bin.zip"
+          GH_RELEASE="https://github.com/gradle/gradle/releases/download/gradle-${GRADLE_VER}/gradle-${GRADLE_VER}-bin.zip"
           echo "从 GitHub Release 下载 Gradle $GRADLE_VER ..."
           if curl -sL -o /tmp/gradle-bin.zip "$GH_RELEASE" && [ -s /tmp/gradle-bin.zip ]; then
             echo "下载成功"
