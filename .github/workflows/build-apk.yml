@@ -228,7 +228,7 @@ jobs:
             --title "YYDesk v$VERSION" \
             --notes-file /tmp/release-notes.md \
             --generate-notes \
-            --repo "https://github.com/${{ github.repository }}" 2>&1
+            --repo "github.com/${{ github.repository }}" 2>&1
           EC=$?
           echo "gh exit code: $EC"
           echo "=== Release 完成 ==="
