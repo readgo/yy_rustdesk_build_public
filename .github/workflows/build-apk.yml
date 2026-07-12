@@ -208,32 +208,27 @@ jobs:
           path: /tmp/diag/
           retention-days: 3
 
-
       - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -x
+          set +e
+          set +o pipefail
+          echo "=== Release 步骤开始 ==="
           TAG="${{ github.ref_name }}"
           VERSION="${{ env.YY_VERSION }}"
-          if [ -z "$VERSION" ]; then
-            VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
-          fi
-          echo "Tag: $TAG, Version: $VERSION"
-          echo "--- dist directory ---"
-          ls -la "$GITHUB_WORKSPACE/dist/" 2>/dev/null || echo "dist/ not found"
-          echo "--- APK files ---"
-          find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
+          echo "Tag=$TAG  Version=$VERSION"
+          echo "Workspace=$GITHUB_WORKSPACE"
+          echo "--- dist ---"
+          ls -la "$GITHUB_WORKSPACE/dist/" 2>&1 || echo "(no dist dir)"
+          echo "--- APK ---"
+          find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>&1
           printf 'YYDesk v%s Android APK\n\n### 安装\n下载 APK 后，在 Android 设备上安装即可。\n首次安装需在系统设置中允许「未知来源应用」。\n\n### 架构\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)' "$VERSION" > /tmp/release-notes.md
-          echo "=== 创建 Release ==="
-          # 先用 gh api 测试 token 权限
-          gh api /repos/${{ github.repository }}/releases --method GET -q '.[0].tag_name' 2>&1 || echo "gh api get 失败"
-          echo "--- 尝试创建 release ---"
-          gh release create "$TAG" \
+          echo "=== 调用 gh release create ==="
+          GH_TOKEN=${{ secrets.GITHUB_TOKEN }} gh release create "$TAG" \
             "$GITHUB_WORKSPACE/dist/"*.apk \
             --title "YYDesk v$VERSION" \
             --notes-file /tmp/release-notes.md \
             --generate-notes \
-            --repo "https://github.com/${{ github.repository }}" 2>&1 || echo "gh release 失败"
-          echo "=== Release 步骤结束 ==="
-        shell: bash
+            --repo "https://github.com/${{ github.repository }}" 2>&1
+          EC=$?
+          echo "gh exit code: $EC"
+          echo "=== Release 完成 ==="
