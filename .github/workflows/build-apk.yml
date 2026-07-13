@@ -104,13 +104,7 @@ jobs:
 
       - name: Setup Rust Android targets
         run: |
-          echo "Rust version: $(rustc --version)"
-          echo "Cargo version: $(cargo --version)"
           rustup target add aarch64-linux-android armv7-linux-androideabi
-          # 固定 Rust 版本到本地编译一致版本
-          rustup install 1.96.0 --no-self-update 2>/dev/null || true
-          rustup default 1.96.0
-          echo "Fixed Rust: $(rustc --version)"
 
       - name: Setup + Build APK
         run: |
