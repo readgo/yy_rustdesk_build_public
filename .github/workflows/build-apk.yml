@@ -104,6 +104,8 @@ jobs:
 
       - name: Setup Rust Android targets
         run: |
+          echo "Rust version: $(rustc --version)"
+          echo "Cargo version: $(cargo --version)"
           rustup target add aarch64-linux-android armv7-linux-androideabi
 
       - name: Setup + Build APK
