@@ -90,11 +90,6 @@ jobs:
           rustup target add aarch64-linux-android armv7-linux-androideabi
 
       - name: Setup + Build APK
-        env:
-          YY_SERVER_URL: ${{ secrets.YY_SERVER_URL }}
-          YY_KEY: ${{ secrets.YY_KEY }}
-          YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL }}
-          YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY }}
         run: |
           set -e -o pipefail
           exec 5>&1  # 保存原始 stdout
