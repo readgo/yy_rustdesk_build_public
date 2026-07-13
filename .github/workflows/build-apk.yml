@@ -71,24 +71,6 @@ jobs:
             fi
           fi
 
-      - name: Restore cached keystore
-        id: keystore-cache
-        uses: actions/cache@v4
-        with:
-          path: flutter/android/yy_control.jks
-          key: yy-android-keystore-v1
-
-      - name: Generate keystore (if not cached)
-        if: steps.keystore-cache.outputs.cache-hit != 'true'
-        run: |
-          echo "生成 keystore..."
-          keytool -genkey -v -keystore flutter/android/yy_control.jks \
-            -alias yy_control -keyalg RSA -keysize 2048 \
-            -validity 10000 -storepass yy123456 -keypass yy123456 \
-            -dname "CN=CI, OU=YYDesk, O=YYDesk, L=Unknown, ST=Unknown, C=CN"
-          echo "keystore 就绪"
-          ls -la flutter/android/yy_control.jks
-
       - name: Ensure key.properties
         run: |
           if [ ! -f flutter/android/key.properties ]; then
@@ -100,6 +82,8 @@ jobs:
           PROPS
             echo "key.properties 已创建"
           fi
+          echo "keystore:"
+          ls -la flutter/android/yy_control.jks
 
       - name: Setup Rust Android targets
         run: |
