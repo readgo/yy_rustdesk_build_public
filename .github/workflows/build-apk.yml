@@ -53,7 +53,7 @@ jobs:
           mkdir -p "$HOME/.yy_rustdesk_env"
           ln -sf /usr/local/lib/android/sdk "$HOME/.yy_rustdesk_env/android-sdk" 2>/dev/null || true
 
-      - name: Pre-cache Gradle distribution
+      - name: Pre-cache Gradle distribution + keystore
         run: |
           GRADLE_VER="7.6.4"
           GH_RELEASE="http://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip"
@@ -71,21 +71,34 @@ jobs:
             fi
           fi
 
-          # 生成调试用 keystore（key.properties 不在 git 里）
+      - name: Restore cached keystore
+        id: keystore-cache
+        uses: actions/cache@v4
+        with:
+          path: flutter/android/yy_control.jks
+          key: yy-android-keystore-v1
+
+      - name: Generate keystore (if not cached)
+        if: steps.keystore-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "生成 keystore..."
+          keytool -genkey -v -keystore flutter/android/yy_control.jks \
+            -alias yy_control -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass yy123456 -keypass yy123456 \
+            -dname "CN=CI, OU=YYDesk, O=YYDesk, L=Unknown, ST=Unknown, C=CN"
+          echo "keystore 就绪"
+          ls -la flutter/android/yy_control.jks
+
+      - name: Ensure key.properties
+        run: |
           if [ ! -f flutter/android/key.properties ]; then
-            echo "生成 keystore..."
-            keytool -genkey -v -keystore /tmp/debug.keystore \
-              -alias yy_control -keyalg RSA -keysize 2048 \
-              -validity 10000 -storepass yy123456 -keypass yy123456 \
-              -dname "CN=CI, OU=YYDesk, O=YYDesk, L=Unknown, ST=Unknown, C=CN"
-            cp /tmp/debug.keystore flutter/android/yy_control.jks
             cat > flutter/android/key.properties << 'PROPS'
           storePassword=yy123456
           keyPassword=yy123456
           keyAlias=yy_control
           storeFile=../yy_control.jks
           PROPS
-            echo "keystore 就绪"
+            echo "key.properties 已创建"
           fi
 
       - name: Setup Rust Android targets
