@@ -111,12 +111,13 @@ jobs:
           set -e -o pipefail
           exec 5>&1  # 保存原始 stdout
           exec > >(tee /tmp/build-output.log) 2>&1
-          
-          # 预装 NDK 和 vcpkg 依赖（与 build_light.sh 共享路径）
+
+          # 强制 ANDROID_NDK_ROOT 与 ANDROID_NDK_HOME 一致（避免 cargo-ndk 用错 NDK 版本）
           export BUILD_ENV_DIR="$HOME/.yy_rustdesk_env"
           mkdir -p "$BUILD_ENV_DIR"
           export NDK_DIR="$BUILD_ENV_DIR/android-ndk-r23b"
           export ANDROID_NDK_HOME="$NDK_DIR"
+          export ANDROID_NDK_ROOT="$NDK_DIR"
 
           if [ ! -d "$NDK_DIR" ]; then
             echo "=== 下载 NDK r23b ==="
