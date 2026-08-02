@@ -94,9 +94,12 @@ jobs:
           path: |
             ${{ runner.home }}/.yy_rustdesk_env/vcpkg
             ${{ runner.home }}/.yy_rustdesk_env/vcpkg_installed
-          key: vcpkg-android-${{ hashFiles('vcpkg.json') }}-${{ runner.os }}
+          # v3: 加入 workflow 文件 hash —— ffmpeg 从默认 8.1.1 切到 overlay 7.1 必须失效旧缓存
+          key: vcpkg-android-${{ hashFiles('vcpkg.json', '.github/workflows/build-apk.yml') }}-v3
+          # restore-keys 必须带 v3：旧缓存是 ffmpeg 8.1.1（不兼容 hwcodec），
+          # 前缀回退会命中旧缓存导致再次失败
           restore-keys: |
-            vcpkg-android-
+            vcpkg-android-v3-
 
       - name: Ensure key.properties
         run: |
@@ -149,9 +152,9 @@ jobs:
           export VCPKG_ROOT="$VCPKG_DIR"
 
           # 装 arm64-android 依赖（--classic 逐个指定，避免复杂包失败拖累全局）
-          # ffmpeg 必须装：hwcodec build.rs 无条件编译 ffmpeg_ram C++ + bindgen 生成 FFI
-          # （vcpkg.json 也声明 ffmpeg 是 android 必需），缺失则报
-          # "libavutil/attributes.h file not found"（实测 2026-08-02 CI 失败）
+          # ffmpeg 必须装 + 锁定版本：hwcodec build.rs 无条件编译 ffmpeg_ram C++，
+          # 其代码兼容 ffmpeg ≤7.1（AVFrame.key_frame 在 8.x 已删除 → 编译失败）。
+          # 项目 res/vcpkg/ffmpeg 是 7.1 overlay port，--overlay-ports 强制用 7.1。
           cd "$GITHUB_WORKSPACE"
           if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include/opus" ]; then
             echo "=== 安装 arm64-android 依赖 ==="
@@ -163,6 +166,7 @@ jobs:
               "oboe:arm64-android" \
               "cpu-features:arm64-android" \
               "ffmpeg:arm64-android" \
+              --overlay-ports="$GITHUB_WORKSPACE/res/vcpkg" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
           if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include/opus" ]; then
@@ -175,6 +179,7 @@ jobs:
               "oboe:arm-neon-android" \
               "cpu-features:arm-neon-android" \
               "ffmpeg:arm-neon-android" \
+              --overlay-ports="$GITHUB_WORKSPACE/res/vcpkg" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
 
