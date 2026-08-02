@@ -88,6 +88,16 @@ jobs:
             fi
           fi
 
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.home }}/.yy_rustdesk_env/vcpkg
+            ${{ runner.home }}/.yy_rustdesk_env/vcpkg_installed
+          key: vcpkg-android-${{ hashFiles('vcpkg.json') }}-${{ runner.os }}
+          restore-keys: |
+            vcpkg-android-
+
       - name: Ensure key.properties
         run: |
           if [ ! -f flutter/android/key.properties ]; then
@@ -138,7 +148,10 @@ jobs:
           export VCPKG_INSTALLED_DIR="$BUILD_ENV_DIR/vcpkg_installed"
           export VCPKG_ROOT="$VCPKG_DIR"
 
-          # 装 arm64-android 依赖（--classic 逐个指定，避免 ffmpeg 等复杂包失败拖累全局）
+          # 装 arm64-android 依赖（--classic 逐个指定，避免复杂包失败拖累全局）
+          # ffmpeg 必须装：hwcodec build.rs 无条件编译 ffmpeg_ram C++ + bindgen 生成 FFI
+          # （vcpkg.json 也声明 ffmpeg 是 android 必需），缺失则报
+          # "libavutil/attributes.h file not found"（实测 2026-08-02 CI 失败）
           cd "$GITHUB_WORKSPACE"
           if [ ! -d "$VCPKG_INSTALLED_DIR/arm64-android/include/opus" ]; then
             echo "=== 安装 arm64-android 依赖 ==="
@@ -149,6 +162,7 @@ jobs:
               "aom:arm64-android" \
               "oboe:arm64-android" \
               "cpu-features:arm64-android" \
+              "ffmpeg:arm64-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
           if [ ! -d "$VCPKG_INSTALLED_DIR/arm-neon-android/include/opus" ]; then
@@ -160,6 +174,7 @@ jobs:
               "aom:arm-neon-android" \
               "oboe:arm-neon-android" \
               "cpu-features:arm-neon-android" \
+              "ffmpeg:arm-neon-android" \
               --x-install-root="$VCPKG_INSTALLED_DIR"
           fi
 
