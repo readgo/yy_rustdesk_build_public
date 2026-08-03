@@ -94,12 +94,12 @@ jobs:
           path: |
             ${{ runner.home }}/.yy_rustdesk_env/vcpkg
             ${{ runner.home }}/.yy_rustdesk_env/vcpkg_installed
-          # v3: 加入 workflow 文件 hash —— ffmpeg 从默认 8.1.1 切到 overlay 7.1 必须失效旧缓存
-          key: vcpkg-android-${{ hashFiles('vcpkg.json', '.github/workflows/build-apk.yml') }}-v3
-          # restore-keys 必须带 v3：旧缓存是 ffmpeg 8.1.1（不兼容 hwcodec），
+          # v4: 加入 workflow 文件 hash —— Rust 版本固定 1.96.0 需失效旧缓存（旧缓存用错误 Rust 编译）
+          key: vcpkg-android-${{ hashFiles('vcpkg.json', '.github/workflows/build-apk.yml') }}-v4
+          # restore-keys 必须带 v4：旧缓存是 ffmpeg 8.1.1 + 错误 Rust 版本（不兼容 hwcodec），
           # 前缀回退会命中旧缓存导致再次失败
           restore-keys: |
-            vcpkg-android-v3-
+            vcpkg-android-v4-
 
       - name: Ensure key.properties
         run: |
@@ -117,6 +117,13 @@ jobs:
 
       - name: Setup Rust Android targets
         run: |
+          # 必须固定 Rust 1.96.0 与本地编译环境一致！
+          # 历史教训：b0bfab8 误删 rustup default 后，CI 用 Actions 默认新版 Rust，
+          # 同一源码编译出的 .text 代码段不同（实测差 65KB）→ 运行时行为差异
+          # → 客户端 first_frame 解码失败降级 VP8（本地 1.96.0 正常、CI 版降级）。
+          rustup install 1.96.0 --no-self-update 2>/dev/null || true
+          rustup default 1.96.0
+          echo "Fixed Rust: $(rustc --version)"
           rustup target add aarch64-linux-android armv7-linux-androideabi
 
       - name: Setup + Build APK
