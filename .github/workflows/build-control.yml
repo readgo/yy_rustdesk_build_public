@@ -375,3 +375,74 @@ jobs:
         with:
           name: ${{ matrix.variant }}-windows-x86_64
           path: dist/${{ matrix.variant }}-windows-x86_64.zip
+
+  # ============================================================
+  # Job: 发布 GitHub Release（合并所有变体产物）
+  # 打 release-* 标签时，把 Linux AppImage + Windows zip 发布到
+  # 对应 tag 的 GitHub Release。
+  # ============================================================
+  release:
+    name: Create PC Control Release
+    if: ${{ startsWith(github.ref_name, 'release-') && !startsWith(github.ref_name, 'release-apk-') }}
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Clone source (for version)
+        run: |
+          RETRIES=3
+          for i in $(seq 1 $RETRIES); do
+            echo "尝试克隆（第 $i 次）..."
+            git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
+              "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" . && break
+            if [ $i -lt $RETRIES ]; then
+              echo "克隆失败，等待 10 秒后重试..."
+              sleep 10
+            else
+              echo "ERROR: 克隆失败 $RETRIES 次"
+              exit 1
+            fi
+          done
+      - name: Read version
+        run: |
+          VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          set +o pipefail
+          echo "=== Release 步骤开始 ==="
+          TAG="${{ github.ref_name }}"
+          VERSION="${{ env.VERSION }}"
+          echo "Tag=$TAG  Version=$VERSION"
+          echo "--- dist ---"
+          ls -la "$GITHUB_WORKSPACE/dist/" 2>&1 || echo "(no dist dir)"
+          # 生成 release notes
+          {
+            printf 'yy_control v%s\n\n### 包含版本\n' "$VERSION"
+            for f in "$GITHUB_WORKSPACE"/dist/*; do
+              [ -f "$f" ] && echo "- $(basename "$f")"
+            done
+            printf '\n### 平台\n- Linux x86_64 (AppImage)\n- Windows x86_64 (zip)'
+          } > /tmp/release-notes.md
+          echo "=== 调用 gh release create ==="
+          gh release create "$TAG" \
+            "$GITHUB_WORKSPACE"/dist/* \
+            --title "yy_control v$VERSION" \
+            --notes-file /tmp/release-notes.md \
+            --generate-notes \
+            --repo "github.com/${{ github.repository }}" 2>&1
+          EC=$?
+          echo "gh exit code: $EC"
+          echo "=== Release 完成 ==="
