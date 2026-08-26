@@ -21,13 +21,70 @@ env:
 
 jobs:
   # ============================================================
+  # Job 0: 生成构建矩阵
+  # 标准版 yy_control 总是构建（用 secrets.YY_SERVER_URL/YY_KEY）。
+  # 扫描私有源码仓库 build_control_*.sh（排除 build_control_flutter.sh），
+  # source 读取每个脚本 export 的 YY_SERVER_URL/YY_KEY → 追加到矩阵。
+  # 与本地 build_control_<版本>.sh 参数一致，CI 只读参数不执行脚本。
+  # 新增版本 = 私有仓库加脚本，不改 CI 代码。
+  # ============================================================
+  setup-matrix:
+    name: Generate control build matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - name: Clone source
+        run: |
+          git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
+            "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" .
+      - id: gen
+        run: |
+          # 标准版 yy_control 总是构建，服务器/key 用 secrets
+          MATRIX='[{"variant":"yy_control","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}"}]'
+          # 扫描版本脚本（排除 build_control_flutter.sh 构建模板）
+          VERSION_SCRIPTS=""
+          for f in build_control_*.sh; do
+            case "$(basename "$f")" in
+              build_control_flutter.sh) continue ;;
+            esac
+            VERSION_SCRIPTS="$VERSION_SCRIPTS $f"
+          done
+          echo "=== 发现版本脚本:${VERSION_SCRIPTS:- (无)} ==="
+          EXTRA='[]'
+          for f in $VERSION_SCRIPTS; do
+            SCRIPT_BASE=$(basename "$f" .sh)
+            VARIANT="${SCRIPT_BASE#build_control_}"
+            # 清空上次残留，再 source 脚本读取其 export 的 YY_SERVER_URL / YY_KEY
+            unset YY_SERVER_URL YY_KEY
+            . "./$f"
+            SERVER="${YY_SERVER_URL:-}"
+            KEY="${YY_KEY:-}"
+            if [ -z "$SERVER" ] || [ -z "$KEY" ]; then
+              echo "WARNING: $f 缺少 YY_SERVER_URL 或 YY_KEY，跳过"
+              continue
+            fi
+            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','server_url':'$SERVER','key':'$KEY'}); print(json.dumps(extra))")
+          done
+          # 合并标准版 + 版本
+          MATRIX=$(echo "$MATRIX" | python3 -c "import json,sys; m=json.load(sys.stdin); m.extend(json.loads('''$EXTRA''')); print(json.dumps(m))")
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "生成矩阵: $MATRIX"
+
+  # ============================================================
   # Linux — AppImage
   # 依赖 apt 系统包 + pkg-config (不依赖 vcpkg)
+  # 矩阵：标准版 yy_control + 各版本脚本，产物按变体命名
   # ============================================================
   build-linux:
-    name: Linux AppImage (x86_64)
+    name: Linux AppImage (${{ matrix.variant }})
     if: ${{ !startsWith(github.ref_name, 'release-win-') && !startsWith(github.ref_name, 'test-win-') && !startsWith(github.ref_name, 'release-apk-') && !startsWith(github.ref_name, 'test-apk-') }}
+    needs: setup-matrix
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
 
     steps:
       - name: Clone source
@@ -93,8 +150,8 @@ jobs:
           cargo build --lib --release \
             --features flutter,yy_control,unix-file-copy-paste
         env:
-          YY_SERVER_URL: ${{ secrets.YY_SERVER_URL }}
-          YY_KEY: ${{ secrets.YY_KEY }}
+          YY_SERVER_URL: ${{ matrix.server_url }}
+          YY_KEY: ${{ matrix.key }}
 
       - name: Verify no GLIBC_2.39 symbols
         run: |
@@ -174,22 +231,28 @@ jobs:
 
           mkdir -p dist
           APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
-            "$APPDIR" "dist/yy_control-x86_64.AppImage"
+            "$APPDIR" "dist/${{ matrix.variant }}-x86_64.AppImage"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
         with:
-          name: yy_control-linux-x86_64
-          path: dist/yy_control-x86_64.AppImage
+          name: ${{ matrix.variant }}-linux-x86_64
+          path: dist/${{ matrix.variant }}-x86_64.AppImage
 
   # ============================================================
   # Windows — exe bundle
   # 依赖 vcpkg 安装原生库
+  # 矩阵：标准版 yy_control + 各版本脚本，产物按变体命名
   # ============================================================
   build-windows:
-    name: Windows exe (x86_64)
+    name: Windows exe (${{ matrix.variant }})
     if: ${{ !startsWith(github.ref_name, 'release-linux-') && !startsWith(github.ref_name, 'test-linux-') && !startsWith(github.ref_name, 'release-apk-') && !startsWith(github.ref_name, 'test-apk-') }}
+    needs: setup-matrix
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
 
     steps:
       - name: Clone source
@@ -257,8 +320,8 @@ jobs:
           cargo build --lib --release `
             --features flutter,yy_control
         env:
-          YY_SERVER_URL: ${{ secrets.YY_SERVER_URL }}
-          YY_KEY: ${{ secrets.YY_KEY }}
+          YY_SERVER_URL: ${{ matrix.server_url }}
+          YY_KEY: ${{ matrix.key }}
 
       - name: Build Flutter Windows
         run: |
@@ -268,13 +331,13 @@ jobs:
       - name: Package Windows bundle
         run: |
           $BUNDLE = "flutter\build\windows\x64\runner\Release"
-          $OUTPUT = "dist\yy_control-windows-x86_64"
+          $OUTPUT = "dist\${{ matrix.variant }}-windows-x86_64"
           New-Item -ItemType Directory -Force -Path $OUTPUT
           Copy-Item "$BUNDLE\*" "$OUTPUT\" -Recurse -Force
-          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\yy_control-windows-x86_64.zip"
+          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\${{ matrix.variant }}-windows-x86_64.zip"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
         with:
-          name: yy_control-windows-x86_64
-          path: dist/yy_control-windows-x86_64.zip
+          name: ${{ matrix.variant }}-windows-x86_64
+          path: dist/${{ matrix.variant }}-windows-x86_64.zip
