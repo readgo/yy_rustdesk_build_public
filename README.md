@@ -39,6 +39,28 @@ git push origin release-20260615000000
 
 GitHub 页面 → **Actions** → **Build yy_control** → **Run workflow**
 
+### Android APK（多版本）
+
+`publish-apk.sh` 打 `release-apk-*` 标签，一次构建**所有版本 APK**：
+
+```bash
+bash scripts/publish-apk.sh   # 打 release-apk-<时间戳> 标签
+```
+
+**构建逻辑**（build-apk.yml）：
+
+- 标准 light 版（YYDesk）总是构建：`flutter/build_light.sh`
+- 扫描私有源码仓库 `flutter/` 下所有 `build_light_*.sh`（排除 `build_light.sh`/`build_light_local.sh`），**每个脚本一个版本，依次执行**
+- 每个版本的**全部参数硬编码在对应的私有仓库脚本里**（如 `build_light_yutomat.sh` 内含 server_url/key/MQTT 等），不在此 public 仓库配置任何版本参数
+- 产物：`dist/YYDesk-<version>.apk` + `dist/<脚本名>-<version>.apk`，发布到同一 GitHub Release
+
+**新增一个版本（2 步，不改 CI 代码）**：
+
+1. 在私有源码仓库 `yy_rustdesk/flutter/` 复制 `build_light_yutomat.sh` 为 `build_light_<版本>.sh`，修改其中的参数（app 名/服务器/key/MQTT）
+2. 提交并推送私有仓库，然后 `bash scripts/publish-apk.sh` 打标签触发
+
+CI 自动扫描到新脚本并构建，无需改 build-apk.yml。
+
 ## GitHub Secrets（必须配置）
 
 | Secret | 说明 |
@@ -50,6 +72,8 @@ GitHub 页面 → **Actions** → **Build yy_control** → **Run workflow**
 | `SOURCE_TOKEN`     | 拉取代码用的 Token |
 | `YY_SERVER_URL`    | 产品后端服务器地址 |
 | `YY_KEY`           | 产品密钥（base64） |
+
+> 各 APK 版本的服务器/key/MQTT 参数在私有源码仓库的 `build_light_<版本>.sh` 中硬编码，不在此 public 仓库配置。
 
 ## 工作原理
 

@@ -209,24 +209,49 @@ jobs:
             fi
           done
 
-          # 跑 build_light.sh
-          echo "=== 开始 build_light.sh ==="
-          bash flutter/build_light.sh
-
-          # APK 重命名（放在同一个步骤里，失败也能被 tee 捕获）
-          echo "=== 查找 APK ==="
-          find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null
-          APK_SRC=$(find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>/dev/null | head -1)
-          if [ -z "$APK_SRC" ]; then
-            echo "ERROR: no APK found after build"
-            exit 1
-          fi
+          # 跑 build_light.sh（标准 light 版，总是构建）
+          # 再扫描 flutter/build_light_*.sh（排除 build_light.sh / build_light_local.sh），
+          # 每个脚本是一个版本（参数硬编码在私有源码仓库），依次执行。
+          # 每个脚本构建完立即复制产物，避免被后续脚本覆盖。
           mkdir -p "$GITHUB_WORKSPACE/dist"
           VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
-          APK_NAME="YYDesk-${VERSION}.apk"
-          cp "$APK_SRC" "$GITHUB_WORKSPACE/dist/$APK_NAME"
-          echo "APK: dist/$APK_NAME"
-          ls -lh "$GITHUB_WORKSPACE/dist/$APK_NAME"
+          APK_OUT="$GITHUB_WORKSPACE/flutter/build/app/outputs/flutter-apk/app-yy-light-release.apk"
+
+          copy_apk() {
+            local NAME="$1"
+            if [ -f "$APK_OUT" ]; then
+              cp "$APK_OUT" "$GITHUB_WORKSPACE/dist/$NAME"
+              echo "APK: dist/$NAME"
+              ls -lh "$GITHUB_WORKSPACE/dist/$NAME"
+            else
+              echo "ERROR: 构建后未找到 APK ($APK_OUT)"
+              exit 1
+            fi
+          }
+
+          echo "=== 开始 build_light.sh (light 标准版) ==="
+          bash flutter/build_light.sh
+          copy_apk "YYDesk-${VERSION}.apk"
+
+          # 扫描版本脚本（排除 build_light.sh / build_light_local.sh）
+          VERSION_SCRIPTS=""
+          for f in flutter/build_light_*.sh; do
+            case "$(basename "$f")" in
+              build_light.sh|build_light_local.sh) continue ;;
+            esac
+            VERSION_SCRIPTS="$VERSION_SCRIPTS $f"
+          done
+          echo "=== 发现版本脚本:${VERSION_SCRIPTS:- (无)} ==="
+          for f in $VERSION_SCRIPTS; do
+            SCRIPT_BASE=$(basename "$f" .sh)
+            VARIANT="${SCRIPT_BASE#build_light_}"
+            echo "=== 开始 $f (variant=$VARIANT) ==="
+            bash "$f"
+            copy_apk "${VARIANT}-${VERSION}.apk"
+          done
+
+          echo "=== dist 产物 ==="
+          ls -lh "$GITHUB_WORKSPACE/dist/"
           echo "YY_VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Upload diagnostic (on failure)
@@ -263,11 +288,18 @@ jobs:
           ls -la "$GITHUB_WORKSPACE/dist/" 2>&1 || echo "(no dist dir)"
           echo "--- APK ---"
           find "$GITHUB_WORKSPACE" -name "*.apk" -type f 2>&1
-          printf 'YYDesk v%s Android APK\n\n### 安装\n下载 APK 后，在 Android 设备上安装即可。\n首次安装需在系统设置中允许「未知来源应用」。\n\n### 架构\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)' "$VERSION" > /tmp/release-notes.md
+          # 生成 release notes：列出所有 APK 产物名
+          {
+            printf 'Android APK v%s\n\n### 包含版本\n' "$VERSION"
+            for apk in "$GITHUB_WORKSPACE"/dist/*.apk; do
+              [ -f "$apk" ] && echo "- $(basename "$apk")"
+            done
+            printf '\n### 安装\n下载 APK 后，在 Android 设备上安装即可。\n首次安装需在系统设置中允许「未知来源应用」。\n\n### 架构\n- arm64-v8a (64-bit)\n- armeabi-v7a (32-bit)'
+          } > /tmp/release-notes.md
           echo "=== 调用 gh release create ==="
           gh release create "$TAG" \
             "$GITHUB_WORKSPACE/dist/"*.apk \
-            --title "YYDesk v$VERSION" \
+            --title "Android APK v$VERSION" \
             --notes-file /tmp/release-notes.md \
             --generate-notes \
             --repo "github.com/${{ github.repository }}" 2>&1
