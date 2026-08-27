@@ -21,7 +21,51 @@ env:
 
 jobs:
   # ============================================================
-  # Job 0: 生成构建矩阵
+  # Job 0: bump PC 控制端独立版本（pc_version 文件）
+  # 与 APK 的 Cargo.toml 版本完全独立，互不影响。
+  # 每次构建 patch+1（1.0.0 → 1.0.1 → ...），push 回源码仓库。
+  # ============================================================
+  bump-version:
+    name: Bump PC version
+    if: ${{ !startsWith(github.ref_name, 'release-apk-') }}
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - name: Clone source
+        run: |
+          RETRIES=3
+          for i in $(seq 1 $RETRIES); do
+            echo "尝试克隆（第 $i 次）..."
+            git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
+              "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" . && break
+            if [ $i -lt $RETRIES ]; then
+              echo "克隆失败，等待 10 秒后重试..."
+              sleep 10
+            else
+              echo "ERROR: 克隆失败 $RETRIES 次"
+              exit 1
+            fi
+          done
+      - name: Bump pc_version
+        id: bump
+        run: |
+          VERSION=$(cat pc_version | tr -d ' \n')
+          echo "当前 PC 版本: $VERSION"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          echo "新 PC 版本: $NEW_VERSION"
+          echo "$NEW_VERSION" > pc_version
+          git config user.email "jing@yyvendor.com"
+          git config user.name "jing"
+          git add pc_version
+          git commit -m "chore: bump pc control version to $NEW_VERSION"
+          git push origin HEAD:${{ secrets.SOURCE_BRANCH }}
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+  # ============================================================
+  # Job 1: 生成构建矩阵
   # 标准版 yy_control 总是构建（用 secrets.YY_SERVER_URL/YY_KEY）。
   # 扫描私有源码仓库 build_control_*.sh（排除 build_control_flutter.sh），
   # source 读取每个脚本 export 的 YY_SERVER_URL/YY_KEY → 追加到矩阵。
@@ -399,32 +443,12 @@ jobs:
   release:
     name: Create PC Control Release
     if: ${{ startsWith(github.ref_name, 'release-') && !startsWith(github.ref_name, 'release-apk-') }}
-    needs: [build-linux, build-windows]
+    needs: [bump-version, build-linux, build-windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
 
     steps:
-      - name: Clone source (for version)
-        run: |
-          RETRIES=3
-          for i in $(seq 1 $RETRIES); do
-            echo "尝试克隆（第 $i 次）..."
-            git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules \
-              "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" . && break
-            if [ $i -lt $RETRIES ]; then
-              echo "克隆失败，等待 10 秒后重试..."
-              sleep 10
-            else
-              echo "ERROR: 克隆失败 $RETRIES 次"
-              exit 1
-            fi
-          done
-      - name: Read version
-        run: |
-          VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -439,7 +463,7 @@ jobs:
           set +o pipefail
           echo "=== Release 步骤开始 ==="
           TAG="${{ github.ref_name }}"
-          VERSION="${{ env.VERSION }}"
+          VERSION="${{ needs.bump-version.outputs.version }}"
           echo "Tag=$TAG  Version=$VERSION"
           echo "--- dist ---"
           ls -la "$GITHUB_WORKSPACE/dist/" 2>&1 || echo "(no dist dir)"
