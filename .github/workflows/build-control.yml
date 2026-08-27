@@ -140,11 +140,17 @@ jobs:
           # magnum-opus build.rs expects $VCPKG_ROOT/installed/, so override.
           $VCPKG_ROOT/vcpkg install --triplet x64-linux \
             --x-install-root="$VCPKG_ROOT/installed"
+          # hwcodec 需要 ffmpeg（用项目 overlay 的 7.1，只装核心不带 nvcodec/amf/qsv）
+          $VCPKG_ROOT/vcpkg install "ffmpeg[core]:x64-linux" --classic \
+            --overlay-ports="$GITHUB_WORKSPACE/res/vcpkg" \
+            --x-install-root="$VCPKG_ROOT/installed" 2>&1 | tail -5
           echo "--- vcpkg installed tree ---"
           ls -la "$VCPKG_ROOT/installed/x64-linux/include/opus" || \
             (echo "ERROR: opus headers missing"; \
              find "$VCPKG_ROOT/installed" -name "opus_multistream.h" 2>/dev/null; \
              exit 1)
+          ls "$VCPKG_ROOT/installed/x64-linux/lib/libavcodec"* 2>/dev/null || \
+            (echo "ERROR: ffmpeg libavcodec missing"; exit 1)
 
       - name: Setup Rust (1.75 MSRV)
         uses: dtolnay/rust-toolchain@stable
@@ -170,7 +176,7 @@ jobs:
       - name: Build Rust CDYLIB
         run: |
           cargo build --lib --release \
-            --features flutter,yy_control,unix-file-copy-paste
+            --features flutter,yy_control,unix-file-copy-paste,hwcodec
         env:
           YY_SERVER_URL: ${{ matrix.server_url }}
           YY_KEY: ${{ matrix.key }}
@@ -333,6 +339,10 @@ jobs:
           # magnum-opus build.rs expects $VCPKG_ROOT\installed\, so override.
           & "$env:VCPKG_ROOT\vcpkg" install --triplet x64-windows-static `
             --x-install-root="$env:VCPKG_ROOT\installed"
+          # hwcodec 需要 ffmpeg（用项目 overlay 的 7.1，只装核心不带 nvcodec/amf/qsv）
+          & "$env:VCPKG_ROOT\vcpkg" install "ffmpeg[core]:x64-windows-static" --classic `
+            --overlay-ports="$env:GITHUB_WORKSPACE\res\vcpkg" `
+            --x-install-root="$env:VCPKG_ROOT\installed" 2>&1 | Select-Object -Last 5
           $opusInc = "$env:VCPKG_ROOT\installed\x64-windows-static\include\opus"
           if (-not (Test-Path "$opusInc\opus_multistream.h")) {
             Write-Error "ERROR: opus headers missing at $opusInc"
@@ -340,7 +350,12 @@ jobs:
               "$env:VCPKG_ROOT\installed" -ErrorAction SilentlyContinue
             exit 1
           }
-          Write-Host "OK: opus headers found at $opusInc"
+          $avcodec = "$env:VCPKG_ROOT\installed\x64-windows-static\lib\avcodec.lib"
+          if (-not (Test-Path $avcodec)) {
+            Write-Error "ERROR: ffmpeg avcodec.lib missing"
+            exit 1
+          }
+          Write-Host "OK: opus + ffmpeg found"
         shell: pwsh
 
       - name: Set Rust env vars for vcpkg
@@ -352,7 +367,7 @@ jobs:
       - name: Build Rust CDYLIB
         run: |
           cargo build --lib --release `
-            --features flutter,yy_control
+            --features flutter,yy_control,hwcodec
         env:
           YY_SERVER_URL: ${{ matrix.server_url }}
           YY_KEY: ${{ matrix.key }}
