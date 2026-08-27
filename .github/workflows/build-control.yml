@@ -188,7 +188,7 @@ jobs:
       - name: Build Flutter Linux
         run: |
           cd flutter
-          flutter build linux --release
+          flutter build linux --release --dart-define=YY_MODE=control
         env:
           LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/12
 
@@ -360,7 +360,7 @@ jobs:
       - name: Build Flutter Windows
         run: |
           cd flutter
-          flutter build windows --release
+          flutter build windows --release --dart-define=YY_MODE=control
 
       - name: Package Windows bundle
         run: |
