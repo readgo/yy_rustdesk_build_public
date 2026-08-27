@@ -134,7 +134,7 @@ jobs:
   build-linux:
     name: Linux AppImage (${{ matrix.variant }})
     if: ${{ !startsWith(github.ref_name, 'release-win-') && !startsWith(github.ref_name, 'test-win-') && !startsWith(github.ref_name, 'release-apk-') && !startsWith(github.ref_name, 'test-apk-') }}
-    needs: setup-matrix
+    needs: [setup-matrix, bump-version]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -303,13 +303,13 @@ jobs:
 
           mkdir -p dist
           APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
-            "$APPDIR" "dist/${{ matrix.variant }}-x86_64.AppImage"
+            "$APPDIR" "dist/${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-x86_64.AppImage"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.variant }}-linux-x86_64
-          path: dist/${{ matrix.variant }}-x86_64.AppImage
+          path: dist/${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-x86_64.AppImage
 
   # ============================================================
   # Windows — exe bundle
@@ -319,7 +319,7 @@ jobs:
   build-windows:
     name: Windows exe (${{ matrix.variant }})
     if: ${{ !startsWith(github.ref_name, 'release-linux-') && !startsWith(github.ref_name, 'test-linux-') && !startsWith(github.ref_name, 'release-apk-') && !startsWith(github.ref_name, 'test-apk-') }}
-    needs: setup-matrix
+    needs: [setup-matrix, bump-version]
     runs-on: windows-2022
     strategy:
       fail-fast: false
@@ -424,16 +424,16 @@ jobs:
       - name: Package Windows bundle
         run: |
           $BUNDLE = "flutter\build\windows\x64\runner\Release"
-          $OUTPUT = "dist\${{ matrix.variant }}-windows-x86_64"
+          $OUTPUT = "dist\${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-windows-x86_64"
           New-Item -ItemType Directory -Force -Path $OUTPUT
           Copy-Item "$BUNDLE\*" "$OUTPUT\" -Recurse -Force
-          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\${{ matrix.variant }}-windows-x86_64.zip"
+          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-windows-x86_64.zip"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.variant }}-windows-x86_64
-          path: dist/${{ matrix.variant }}-windows-x86_64.zip
+          path: dist/${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-windows-x86_64.zip
 
   # ============================================================
   # Job: 发布 GitHub Release（合并所有变体产物）
