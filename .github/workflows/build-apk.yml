@@ -36,20 +36,36 @@ jobs:
 
       - name: Bump patch version
         run: |
-          VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
-          echo "当前版本: $VERSION"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
-          echo "新版本: $NEW_VERSION"
-          sed -i "s/^version = \"$VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
-          grep '^version' Cargo.toml
           git config user.email "jing@yyvendor.com"
           git config user.name "jing"
-          git add Cargo.toml
-          git commit -m "chore: bump version to $NEW_VERSION"
-          git push origin HEAD:${{ secrets.SOURCE_BRANCH }}
-          echo "BUMPED_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          for RETRY in 1 2 3; do
+            if [ "$RETRY" -gt 1 ]; then
+              echo "重试 $RETRY: 更新本地分支..."
+              git fetch origin "${{ secrets.SOURCE_BRANCH }}" || true
+              git reset --hard "origin/${{ secrets.SOURCE_BRANCH }}" || true
+            fi
+            VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
+            echo "当前版本: $VERSION (尝试 $RETRY)"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+            echo "新版本: $NEW_VERSION"
+            sed -i "s/^version = \"$VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
+            grep '^version' Cargo.toml
+            git add Cargo.toml
+            git commit -m "chore: bump version to $NEW_VERSION" || true
+            if git push origin HEAD:${{ secrets.SOURCE_BRANCH }}; then
+              echo "推送成功"
+              echo "BUMPED_VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "推送失败，2秒后重试..."
+            # 恢复 Cargo.toml 以便重试时重新计算
+            git reset --hard HEAD~1 2>/dev/null || true
+            sleep 2
+          done
+          echo "ERROR: 推送失败 3 次"
+          exit 1
 
       - name: Install system dependencies
         run: |
