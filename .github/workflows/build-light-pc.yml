@@ -72,6 +72,8 @@ jobs:
   # ============================================================
   # Job 1: 生成构建矩阵
   # 标准版 yy_light 总是构建。扫描 build_light_pc_*.sh。
+  # artifact 字段 = 产物命名前缀（app_name 的 _ 归一成 -），
+  # 统一命名规则：<artifact>-<平台>-<架构>-v<版本>.<扩展名>
   # ============================================================
   setup-matrix:
     name: Generate light build matrix
@@ -96,7 +98,7 @@ jobs:
           done
       - id: gen
         run: |
-          MATRIX='[{"variant":"yy_light","app_name":"yy_light","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}"}]'
+          MATRIX='[{"variant":"yy_light","app_name":"yy_light","artifact":"yy-light","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}"}]'
           VERSION_SCRIPTS=""
           for f in build_light_pc_*.sh; do
             case "$(basename "$f")" in
@@ -118,17 +120,19 @@ jobs:
               echo "WARNING: $f 缺少 YY_SERVER_URL 或 YY_KEY，跳过"
               continue
             fi
-            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','app_name':'$APP_NAME','server_url':'$SERVER','key':'$KEY'}); print(json.dumps(extra))")
+            ARTIFACT=$(echo "$APP_NAME" | tr '_' '-')
+            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','app_name':'$APP_NAME','artifact':'$ARTIFACT','server_url':'$SERVER','key':'$KEY'}); print(json.dumps(extra))")
           done
           MATRIX=$(echo "$MATRIX" | python3 -c "import json,sys; m=json.load(sys.stdin); m.extend(json.loads('''$EXTRA''')); print(json.dumps(m))")
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
           echo "生成矩阵: $MATRIX"
 
   # ============================================================
-  # Linux — 构建 PC light 版（绿色版目录打包 zip）
+  # Linux — AppImage（下载即可用，无需解压）
+  # 依赖 apt 系统包 + pkg-config (不依赖 vcpkg ffmpeg，light 不编译 hwcodec)
   # ============================================================
   build-linux:
-    name: Linux PC light (${{ matrix.variant }})
+    name: Linux PC light AppImage (${{ matrix.variant }})
     needs: [setup-matrix, bump-version]
     runs-on: ubuntu-24.04
     strategy:
@@ -219,29 +223,195 @@ jobs:
         env:
           LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/12
 
-      - name: Package light bundle (zip)
+      - name: Download appimagetool
         run: |
+          curl -sL \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -o /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+
+      - name: Package AppImage
+        run: |
+          APPDIR=$(mktemp -d)
           BUNDLE="flutter/build/linux/x64/release/bundle"
-          OUTPUT="dist/${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-linux-x86_64"
-          mkdir -p "$OUTPUT"
-          cp -r "$BUNDLE"/* "$OUTPUT/"
-          mv "$OUTPUT/rustdesk" "$OUTPUT/yy_light" 2>/dev/null || true
-          cd dist
-          zip -r "${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-linux-x86_64.zip" \
-            "$(basename "$OUTPUT")"
+          mkdir -p "$APPDIR/usr/lib/yy_light"
+          cp -r "$BUNDLE"/* "$APPDIR/usr/lib/yy_light/"
+
+          mkdir -p "$APPDIR/usr/lib/x86_64-linux-gnu"
+          for lib in \
+            libgtk-3.so.0 libgdk-3.so.0 libglib-2.0.so.0 libgobject-2.0.so.0 \
+            libgio-2.0.so.0 libcairo.so.2 libcairo-gobject.so.2 libgdk_pixbuf-2.0.so.0 \
+            libatk-1.0.so.0 libatk-bridge-2.0.so.0 libatspi.so.0 \
+            libepoxy.so.0 libpng16.so.16 libjpeg.so.8 libexpat.so.1 \
+            libX11.so.6 libXfixes.so.3 libxcb.so.1 libxcb-shm.so.0 \
+            libxcb-randr.so.0 libxcb-xfixes.so.0 libxcb-shape.so.0 \
+            libXdamage.so.1 libXcomposite.so.1 libXrender.so.1 \
+            libXext.so.6 libXcursor.so.1 libXi.so.6 libXtst.so.6 \
+            libXrandr.so.2 libXinerama.so.1 libxkbcommon.so.0 \
+            libstdc++.so.6 libm.so.6 libgcc_s.so.1 \
+            libpcre2-8.so.0 libffi.so.8 libpixman-1.so.0 \
+            libuuid.so.1 libbz2.so.1.0 libEGL.so.1 libGL.so.1 \
+            libdrm.so.2 libgbm.so.1 \
+            libwayland-client.so.0 libwayland-cursor.so.0 \
+            libwayland-egl.so.1 libwayland-server.so.0 \
+            libgstreamer-1.0.so.0 libgstvideo-1.0.so.0 libgstbase-1.0.so.0 \
+            libgstpbutils-1.0.so.0 libgstaudio-1.0.so.0 libgsttag-1.0.so.0 \
+            libgmodule-2.0.so.0 libgstapp-1.0.so.0 libgstriff-1.0.so.0 \
+            liborc-0.4.so.0; do
+            cp -L "/lib/x86_64-linux-gnu/$lib" "$APPDIR/usr/lib/x86_64-linux-gnu/" 2>/dev/null || true
+            cp -L "/usr/lib/x86_64-linux-gnu/$lib" "$APPDIR/usr/lib/x86_64-linux-gnu/" 2>/dev/null || true
+          done
+
+          cat > "$APPDIR/AppRun" << 'EOSCRIPT'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export LD_LIBRARY_PATH="$HERE/usr/lib/yy_light/lib:$HERE/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+          exec "$HERE/usr/lib/yy_light/rustdesk" "$@"
+          EOSCRIPT
+          chmod +x "$APPDIR/AppRun"
+          cat > "$APPDIR/yy_light.desktop" << 'EODESK'
+          [Desktop Entry]
+          Name=yy_light
+          Comment=Remote Desktop
+          Exec=yy_light
+          Icon=yy_light
+          Type=Application
+          Categories=Network;
+          Terminal=false
+          EODESK
+          convert -size 256x256 xc:transparent -fill "#4A90D9" \
+            -draw "circle 128,128 128,20" "$APPDIR/yy_light.png" || true
+
+          mkdir -p dist
+          APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
+            "$APPDIR" "dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.AppImage"
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.variant }}-linux-x86_64
-          path: dist/${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-linux-x86_64.zip
+          path: dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.AppImage
+
+  # ============================================================
+  # Windows — 绿色版目录打包 zip
+  # 与 build-control.yml 的 Windows job 同构，区别：
+  #   - 不带 yy_control feature，带 unix-file-copy-paste
+  #   - YY_MODE=light
+  # ============================================================
+  build-windows:
+    name: Windows PC light zip (${{ matrix.variant }})
+    needs: [setup-matrix, bump-version]
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Clone source
+        run: |
+          $retries = 3
+          for ($i = 1; $i -le $retries; $i++) {
+            Write-Host "尝试克隆（第 $i 次）..."
+            git clone --branch "${{ secrets.SOURCE_BRANCH }}" --recurse-submodules `
+              "https://${{ secrets.SOURCE_USERNAME }}:${{ secrets.SOURCE_TOKEN }}@${{ secrets.SOURCE_GIT_HOST }}/${{ secrets.SOURCE_REPO }}.git" .
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($i -lt $retries) {
+              Write-Host "克隆失败，等待 10 秒后重试..."
+              Start-Sleep -Seconds 10
+            } else {
+              Write-Host "ERROR: 克隆失败 $retries 次"
+              exit 1
+            }
+          }
+        shell: pwsh
+
+      - name: Install LLVM (for bindgen)
+        run: |
+          if (-not (Test-Path "C:\Program Files\LLVM\bin\clang.exe")) {
+            choco install llvm -y --no-progress
+          } else {
+            Write-Host "LLVM already installed"
+          }
+        shell: pwsh
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Fetch dependencies (for magnum-opus patching)
+        run: cargo fetch
+
+      - name: Fix magnum-opus build.rs (opus header path include both flat and subdir)
+        run: python3 scripts/fix-magnum-opus.py
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.24.5'
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '120deac3062162151622ca4860575a33844ba10b'
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          $VCPKG_ROOT\vcpkg install --triplet x64-windows-static `
+            --x-install-root="$env:VCPKG_ROOT\installed"
+          $opusInc = "$env:VCPKG_ROOT\installed\x64-windows-static\include\opus"
+          if (-not (Test-Path "$opusInc\opus_multistream.h")) {
+            Write-Error "ERROR: opus headers missing at $opusInc"
+            exit 1
+          }
+          Write-Host "OK: opus found"
+        shell: pwsh
+
+      - name: Set Rust env vars for vcpkg
+        run: |
+          echo "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $env:GITHUB_ENV
+
+      - name: Build Rust CDYLIB
+        run: |
+          cargo build --lib --release `
+            --features flutter,unix-file-copy-paste
+        env:
+          YY_SERVER_URL: ${{ matrix.server_url }}
+          YY_KEY: ${{ matrix.key }}
+          YY_APP_NAME: ${{ matrix.app_name }}
+
+      - name: Build Flutter Windows
+        run: |
+          cd flutter
+          flutter build windows --release --dart-define=YY_MODE=light
+
+      - name: Package Windows bundle
+        run: |
+          $BUNDLE = "flutter\build\windows\x64\runner\Release"
+          $NAME = "${{ matrix.artifact }}"
+          $VERSION = "${{ needs.bump-version.outputs.version }}"
+          $OUTPUT = "dist\$NAME-windows-x86_64-v$VERSION"
+          New-Item -ItemType Directory -Force -Path $OUTPUT
+          Copy-Item "$BUNDLE\*" "$OUTPUT\" -Recurse -Force
+          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\$NAME-windows-x86_64-v$VERSION.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.variant }}-windows-x86_64
+          path: dist/${{ matrix.artifact }}-windows-x86_64-v${{ needs.bump-version.outputs.version }}.zip
 
   # ============================================================
   # Job: 发布 GitHub Release
   # ============================================================
   release:
     name: Create PC Light Release
-    needs: [bump-version, build-linux]
+    needs: [bump-version, build-linux, build-windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -270,7 +440,7 @@ jobs:
             for f in "$GITHUB_WORKSPACE"/dist/*; do
               [ -f "$f" ] && echo "- $(basename "$f")"
             done
-            printf '\n### 平台\n- Linux x86_64 (绿色版 zip)'
+            printf '\n### 平台\n- Linux x86_64 (AppImage，下载后 chmod +x 直接运行)\n- Windows x86_64 (绿色版 zip，解压即用)'
           } > /tmp/release-notes.md
           echo "=== 调用 gh release create ==="
           gh release create "$TAG" \

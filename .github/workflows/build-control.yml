@@ -112,7 +112,7 @@ jobs:
       - id: gen
         run: |
           # 标准版 yy_control 总是构建，服务器/key 用 secrets
-          MATRIX='[{"variant":"yy_control","app_name":"yy_control","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}"}]'
+          MATRIX='[{"variant":"yy_control","app_name":"yy_control","artifact":"yy-control","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}"}]'
           # 扫描版本脚本（排除 build_control_flutter.sh 构建模板）
           VERSION_SCRIPTS=""
           for f in build_control_*.sh; do
@@ -136,7 +136,8 @@ jobs:
               echo "WARNING: $f 缺少 YY_SERVER_URL 或 YY_KEY，跳过"
               continue
             fi
-            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','app_name':'$APP_NAME','server_url':'$SERVER','key':'$KEY'}); print(json.dumps(extra))")
+            ARTIFACT=$(echo "$APP_NAME" | tr '_' '-')
+            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','app_name':'$APP_NAME','artifact':'$ARTIFACT','server_url':'$SERVER','key':'$KEY'}); print(json.dumps(extra))")
           done
           # 合并标准版 + 版本
           MATRIX=$(echo "$MATRIX" | python3 -c "import json,sys; m=json.load(sys.stdin); m.extend(json.loads('''$EXTRA''')); print(json.dumps(m))")
@@ -321,13 +322,13 @@ jobs:
 
           mkdir -p dist
           APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
-            "$APPDIR" "dist/${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-x86_64.AppImage"
+            "$APPDIR" "dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.AppImage"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.variant }}-linux-x86_64
-          path: dist/${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-x86_64.AppImage
+          path: dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.AppImage
 
   # ============================================================
   # Windows — exe bundle
@@ -443,16 +444,18 @@ jobs:
       - name: Package Windows bundle
         run: |
           $BUNDLE = "flutter\build\windows\x64\runner\Release"
-          $OUTPUT = "dist\${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-windows-x86_64"
+          $NAME = "${{ matrix.artifact }}"
+          $VERSION = "${{ needs.bump-version.outputs.version }}"
+          $OUTPUT = "dist\$NAME-windows-x86_64-v$VERSION"
           New-Item -ItemType Directory -Force -Path $OUTPUT
           Copy-Item "$BUNDLE\*" "$OUTPUT\" -Recurse -Force
-          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-windows-x86_64.zip"
+          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\$NAME-windows-x86_64-v$VERSION.zip"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.variant }}-windows-x86_64
-          path: dist/${{ matrix.variant }}-${{ needs.bump-version.outputs.version }}-windows-x86_64.zip
+          path: dist/${{ matrix.artifact }}-windows-x86_64-v${{ needs.bump-version.outputs.version }}.zip
 
   # ============================================================
   # Job: 发布 GitHub Release（合并所有变体产物）

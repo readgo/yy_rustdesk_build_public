@@ -247,7 +247,7 @@ jobs:
 
           echo "=== 开始 build_light.sh (light 标准版) ==="
           bash flutter/build_light.sh
-          copy_apk "yy-desk-${VERSION}.apk"
+          copy_apk "yy-desk-android-v${VERSION}.apk"
 
           # 扫描版本脚本（排除 build_light.sh / build_light_local.sh）
           VERSION_SCRIPTS=""
@@ -263,7 +263,7 @@ jobs:
             VARIANT="${SCRIPT_BASE#build_light_}"
             echo "=== 开始 $f (variant=$VARIANT) ==="
             bash "$f"
-            copy_apk "${VARIANT}-desk-${VERSION}.apk"
+            copy_apk "yy-desk-${VARIANT}-android-v${VERSION}.apk"
           done
 
           echo "=== dist 产物 ==="
