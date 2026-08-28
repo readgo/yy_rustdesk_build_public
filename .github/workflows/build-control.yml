@@ -9,6 +9,8 @@ on:
       - 'test-linux-*'
       - 'release-win-*'
       - 'test-win-*'
+    tags-ignore:
+      - 'release-light-*'
   workflow_dispatch:
     inputs:
       tag_name:
