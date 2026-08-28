@@ -96,7 +96,7 @@ jobs:
       - id: gen
         run: |
           # 标准版 yy_control 总是构建，服务器/key 用 secrets
-          MATRIX='[{"variant":"yy_control","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}"}]'
+          MATRIX='[{"variant":"yy_control","app_name":"yy_control","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}"}]'
           # 扫描版本脚本（排除 build_control_flutter.sh 构建模板）
           VERSION_SCRIPTS=""
           for f in build_control_*.sh; do
@@ -110,16 +110,17 @@ jobs:
           for f in $VERSION_SCRIPTS; do
             SCRIPT_BASE=$(basename "$f" .sh)
             VARIANT="${SCRIPT_BASE#build_control_}"
-            # 清空上次残留，再 source 脚本读取其 export 的 YY_SERVER_URL / YY_KEY
-            unset YY_SERVER_URL YY_KEY
+            # 清空上次残留，再 source 脚本读取其 export 的 YY_SERVER_URL / YY_KEY / YY_APP_NAME
+            unset YY_SERVER_URL YY_KEY YY_APP_NAME
             . "./$f"
             SERVER="${YY_SERVER_URL:-}"
             KEY="${YY_KEY:-}"
+            APP_NAME="${YY_APP_NAME:-$VARIANT}"
             if [ -z "$SERVER" ] || [ -z "$KEY" ]; then
               echo "WARNING: $f 缺少 YY_SERVER_URL 或 YY_KEY，跳过"
               continue
             fi
-            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','server_url':'$SERVER','key':'$KEY'}); print(json.dumps(extra))")
+            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','app_name':'$APP_NAME','server_url':'$SERVER','key':'$KEY'}); print(json.dumps(extra))")
           done
           # 合并标准版 + 版本
           MATRIX=$(echo "$MATRIX" | python3 -c "import json,sys; m=json.load(sys.stdin); m.extend(json.loads('''$EXTRA''')); print(json.dumps(m))")
@@ -224,6 +225,7 @@ jobs:
         env:
           YY_SERVER_URL: ${{ matrix.server_url }}
           YY_KEY: ${{ matrix.key }}
+          YY_APP_NAME: ${{ matrix.app_name }}
 
       - name: Verify no GLIBC_2.39 symbols
         run: |
@@ -415,6 +417,7 @@ jobs:
         env:
           YY_SERVER_URL: ${{ matrix.server_url }}
           YY_KEY: ${{ matrix.key }}
+          YY_APP_NAME: ${{ matrix.app_name }}
 
       - name: Build Flutter Windows
         run: |
