@@ -360,7 +360,7 @@ jobs:
 
       - name: Install vcpkg dependencies
         run: |
-          $VCPKG_ROOT\vcpkg install --triplet x64-windows-static `
+          & "$env:VCPKG_ROOT\vcpkg" install --triplet x64-windows-static `
             --x-install-root="$env:VCPKG_ROOT\installed"
           $opusInc = "$env:VCPKG_ROOT\installed\x64-windows-static\include\opus"
           if (-not (Test-Path "$opusInc\opus_multistream.h")) {
