@@ -4,13 +4,12 @@ on:
   push:
     tags:
       - 'release-*'
+      - '!release-light-*'
       - 'test-*'
       - 'release-linux-*'
       - 'test-linux-*'
       - 'release-win-*'
       - 'test-win-*'
-    tags-ignore:
-      - 'release-light-*'
   workflow_dispatch:
     inputs:
       tag_name:
