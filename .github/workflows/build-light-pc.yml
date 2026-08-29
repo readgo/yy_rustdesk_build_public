@@ -49,7 +49,8 @@ jobs:
               git fetch origin "${{ secrets.SOURCE_BRANCH }}" || true
               git reset --hard "origin/${{ secrets.SOURCE_BRANCH }}" || true
             fi
-            VERSION=$(cat pc_light_version | tr -d ' \n')
+            VERSION=$(cat pc_light_version 2>/dev/null || echo "1.0.0" | tr -d ' \n')
+            if [ -z "$VERSION" ]; then VERSION="1.0.0"; fi
             echo "当前 PC light 版本: $VERSION (尝试 $RETRY)"
             IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
             NEW_PATCH=$((PATCH + 1))
@@ -221,6 +222,7 @@ jobs:
           YY_MQTT_PASS: ${{ secrets.YY_MQTT_PASS || '' }}
           YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL || '' }}
           YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY || '' }}
+          PC_LIGHT_VERSION: ${{ needs.bump-version.outputs.version }}
 
       - name: Build Flutter Linux
         run: |
@@ -380,27 +382,29 @@ jobs:
         shell: pwsh
 
       - name: Set Rust env vars for vcpkg
+        shell: pwsh
         run: |
           echo "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
           echo "PKG_CONFIG_ALLOW_CROSS=1" >> $env:GITHUB_ENV
 
       - name: Build Rust CDYLIB
+        shell: pwsh
         run: |
-          cargo build --lib --release `
-            --features flutter,yy_light
-        env:
-          YY_SERVER_URL: ${{ matrix.server_url }}
-          YY_KEY: ${{ matrix.key }}
-          YY_APP_NAME: ${{ matrix.app_name }}
-          YY_MQTT_HOST: ${{ secrets.YY_MQTT_HOST || 'localhost' }}
-          YY_MQTT_PORT: ${{ secrets.YY_MQTT_PORT || '1883' }}
-          YY_MQTT_USER: ${{ secrets.YY_MQTT_USER || '' }}
-          YY_MQTT_PASS: ${{ secrets.YY_MQTT_PASS || '' }}
-          YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL || '' }}
-          YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY || '' }}
+          $env:YY_SERVER_URL = "${{ matrix.server_url }}"
+          $env:YY_KEY = "${{ matrix.key }}"
+          $env:YY_APP_NAME = "${{ matrix.app_name }}"
+          $env:YY_MQTT_HOST = "${{ secrets.YY_MQTT_HOST || 'localhost' }}"
+          $env:YY_MQTT_PORT = "${{ secrets.YY_MQTT_PORT || '1883' }}"
+          $env:YY_MQTT_USER = "${{ secrets.YY_MQTT_USER || '' }}"
+          $env:YY_MQTT_PASS = "${{ secrets.YY_MQTT_PASS || '' }}"
+          $env:YY_TERMINAL_URL = "${{ secrets.YY_TERMINAL_URL || '' }}"
+          $env:YY_SECRET_KEY = "${{ secrets.YY_SECRET_KEY || '' }}"
+          $env:PC_LIGHT_VERSION = "${{ needs.bump-version.outputs.version }}"
+          cargo build --lib --release --features flutter,yy_light
 
       - name: Build Flutter Windows
+        shell: pwsh
         run: |
           cd flutter
           flutter build windows --release `
@@ -409,6 +413,7 @@ jobs:
             --dart-define=YY_SECRET_KEY="${{ secrets.YY_SECRET_KEY }}"
 
       - name: Package Windows bundle
+        shell: pwsh
         run: |
           $BUNDLE = "flutter\build\windows\x64\runner\Release"
           $NAME = "${{ matrix.artifact }}"
