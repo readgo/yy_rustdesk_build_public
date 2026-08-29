@@ -215,11 +215,20 @@ jobs:
           YY_SERVER_URL: ${{ matrix.server_url }}
           YY_KEY: ${{ matrix.key }}
           YY_APP_NAME: ${{ matrix.app_name }}
+          YY_MQTT_HOST: ${{ secrets.YY_MQTT_HOST || 'localhost' }}
+          YY_MQTT_PORT: ${{ secrets.YY_MQTT_PORT || '1883' }}
+          YY_MQTT_USER: ${{ secrets.YY_MQTT_USER || '' }}
+          YY_MQTT_PASS: ${{ secrets.YY_MQTT_PASS || '' }}
+          YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL || '' }}
+          YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY || '' }}
 
       - name: Build Flutter Linux
         run: |
           cd flutter
-          flutter build linux --release --dart-define=YY_MODE=light
+          flutter build linux --release \
+            --dart-define=YY_MODE=light \
+            --dart-define=YY_TERMINAL_URL="${{ secrets.YY_TERMINAL_URL }}" \
+            --dart-define=YY_SECRET_KEY="${{ secrets.YY_SECRET_KEY }}"
         env:
           LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/12
 
@@ -379,16 +388,25 @@ jobs:
       - name: Build Rust CDYLIB
         run: |
           cargo build --lib --release `
-            --features flutter,unix-file-copy-paste
+            --features flutter,yy_light
         env:
           YY_SERVER_URL: ${{ matrix.server_url }}
           YY_KEY: ${{ matrix.key }}
           YY_APP_NAME: ${{ matrix.app_name }}
+          YY_MQTT_HOST: ${{ secrets.YY_MQTT_HOST || 'localhost' }}
+          YY_MQTT_PORT: ${{ secrets.YY_MQTT_PORT || '1883' }}
+          YY_MQTT_USER: ${{ secrets.YY_MQTT_USER || '' }}
+          YY_MQTT_PASS: ${{ secrets.YY_MQTT_PASS || '' }}
+          YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL || '' }}
+          YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY || '' }}
 
       - name: Build Flutter Windows
         run: |
           cd flutter
-          flutter build windows --release --dart-define=YY_MODE=light
+          flutter build windows --release `
+            --dart-define=YY_MODE=light `
+            --dart-define=YY_TERMINAL_URL="${{ secrets.YY_TERMINAL_URL }}" `
+            --dart-define=YY_SECRET_KEY="${{ secrets.YY_SECRET_KEY }}"
 
       - name: Package Windows bundle
         run: |
