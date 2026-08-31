@@ -73,6 +73,7 @@ jobs:
   # ============================================================
   # Job 1: 生成构建矩阵
   # 标准版 yy_light 总是构建。扫描 build_light_pc_*.sh。
+  # 排除 build_light_pc_flutter.sh（基脚本）和 *local.sh（开发者本地测试用，不发布）。
   # artifact 字段 = 产物命名前缀（app_name 的 _ 归一成 -），
   # 统一命名规则：<artifact>-<平台>-<架构>-v<版本>.<扩展名>
   # ============================================================
@@ -103,7 +104,7 @@ jobs:
           VERSION_SCRIPTS=""
           for f in build_light_pc_*.sh; do
             case "$(basename "$f")" in
-              build_light_pc_flutter.sh) continue ;;
+              build_light_pc_flutter.sh|*_local.sh) continue ;;
             esac
             VERSION_SCRIPTS="$VERSION_SCRIPTS $f"
           done

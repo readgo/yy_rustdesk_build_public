@@ -226,7 +226,7 @@ jobs:
           done
 
           # 跑 build_light.sh（标准 light 版，总是构建）
-          # 再扫描 flutter/build_light_*.sh（排除 build_light.sh / build_light_local.sh），
+          # 再扫描 flutter/build_light_*.sh（排除 build_light.sh / *local.sh），
           # 每个脚本是一个版本（参数硬编码在私有源码仓库），依次执行。
           # 每个脚本构建完立即复制产物，避免被后续脚本覆盖。
           mkdir -p "$GITHUB_WORKSPACE/dist"
@@ -249,11 +249,11 @@ jobs:
           bash flutter/build_light.sh
           copy_apk "yy-desk-android-v${VERSION}.apk"
 
-          # 扫描版本脚本（排除 build_light.sh / build_light_local.sh）
+          # 扫描版本脚本（排除 build_light.sh / *local.sh）
           VERSION_SCRIPTS=""
           for f in flutter/build_light_*.sh; do
             case "$(basename "$f")" in
-              build_light.sh|build_light_local.sh) continue ;;
+              build_light.sh|*_local.sh) continue ;;
             esac
             VERSION_SCRIPTS="$VERSION_SCRIPTS $f"
           done
