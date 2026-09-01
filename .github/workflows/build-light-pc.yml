@@ -168,12 +168,9 @@ jobs:
           YY_SERVER_URL: ${{ matrix.server_url }}
           YY_KEY: ${{ matrix.key }}
           YY_APP_NAME: ${{ matrix.app_name }}
-          YY_MQTT_HOST: ${{ secrets.YY_MQTT_HOST || 'localhost' }}
-          YY_MQTT_PORT: ${{ secrets.YY_MQTT_PORT || '1883' }}
-          YY_MQTT_USER: ${{ secrets.YY_MQTT_USER || '' }}
-          YY_MQTT_PASS: ${{ secrets.YY_MQTT_PASS || '' }}
-          YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL || '' }}
-          YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY || '' }}
+          # MQTT / terminal-url / secret-key 不传：脚本默认值与 APK 正式版一致
+          # (remote.yyvendor.com / wtt / https://remote.yyvendor.com/api/v1/device/)
+          # 显式传空会覆盖脚本默认值，导致产物无上报配置
           YY_OUTPUT_NAME: ${{ matrix.artifact }}
           PC_LIGHT_VERSION: ${{ needs.bump-version.outputs.version }}
           SKIP_SYSTEM_DEPS: ''
