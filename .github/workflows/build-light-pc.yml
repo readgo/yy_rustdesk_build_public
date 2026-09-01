@@ -159,61 +159,11 @@ jobs:
             fi
           done
 
-      - name: Install system dependencies
+      - name: Build (build_light_pc_flutter.sh 自包含环境)
         run: |
-          sudo apt-get update -qq
-          # 分两批：先装编译依赖（gcc-12 单独装，避免与预装 gcc 冲突）
-          sudo apt-get install -y \
-            libgtk-3-dev libxdo-dev libva-dev libxcb-randr0-dev \
-            libpulse-dev libgstreamer-plugins-base1.0-dev \
-            libxfixes-dev libxtst-dev libxkbcommon-dev \
-            libpam0g-dev libsodium-dev nasm \
-            curl wget file imagemagick
-          sudo apt-get install -y gcc-12 g++-12
-          echo "CC=gcc-12" >> $GITHUB_ENV
-          echo "CXX=g++-12" >> $GITHUB_ENV
-
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: '120deac3062162151622ca4860575a33844ba10b'
-          doNotCache: false
-
-      - name: Install vcpkg deps (Linux)
-        run: |
-          $VCPKG_ROOT/vcpkg install --triplet x64-linux \
-            --x-install-root="$VCPKG_ROOT/installed"
-          echo "--- vcpkg installed tree ---"
-          ls -la "$VCPKG_ROOT/installed/x64-linux/include/opus" || \
-            (echo "ERROR: opus headers missing"; \
-             find "$VCPKG_ROOT/installed" -name "opus_multistream.h" 2>/dev/null; \
-             exit 1)
-
-      - name: Setup Rust (stable, ≥1.87 for ksni/zbus)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 'stable'
-          targets: x86_64-unknown-linux-gnu
-
-      - name: Fetch dependencies (for magnum-opus patching)
-        run: cargo fetch
-
-      - name: Fix magnum-opus build.rs (opus header path include both flat and subdir)
-        run: python3 scripts/fix-magnum-opus.py
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          flutter-version: '3.24.5'
-
-      - name: Enable Linux desktop
-        run: flutter config --enable-linux-desktop
-
-      - name: Build Rust CDYLIB
-        run: |
-          cargo build --lib --release \
-            --features flutter,unix-file-copy-paste
+          # 完全复用本机构建脚本：自动检测并安装所有依赖
+          # (系统包 sudo apt / Rust rustup / vcpkg+依赖 / Flutter SDK)
+          bash build_light_pc_flutter.sh
         env:
           YY_SERVER_URL: ${{ matrix.server_url }}
           YY_KEY: ${{ matrix.key }}
@@ -224,17 +174,9 @@ jobs:
           YY_MQTT_PASS: ${{ secrets.YY_MQTT_PASS || '' }}
           YY_TERMINAL_URL: ${{ secrets.YY_TERMINAL_URL || '' }}
           YY_SECRET_KEY: ${{ secrets.YY_SECRET_KEY || '' }}
+          YY_OUTPUT_NAME: ${{ matrix.artifact }}
           PC_LIGHT_VERSION: ${{ needs.bump-version.outputs.version }}
-
-      - name: Build Flutter Linux
-        run: |
-          cd flutter
-          flutter build linux --release \
-            --dart-define=YY_MODE=light \
-            --dart-define=YY_TERMINAL_URL="${{ secrets.YY_TERMINAL_URL }}" \
-            --dart-define=YY_SECRET_KEY="${{ secrets.YY_SECRET_KEY }}"
-        env:
-          LIBRARY_PATH: /usr/lib/gcc/x86_64-linux-gnu/12
+          SKIP_SYSTEM_DEPS: ''
 
       - name: Download appimagetool
         run: |
@@ -246,7 +188,7 @@ jobs:
       - name: Package AppImage
         run: |
           APPDIR=$(mktemp -d)
-          BUNDLE="flutter/build/linux/x64/release/bundle"
+          BUNDLE="dist/${{ matrix.artifact }}-flutter-linux-x86_64"
           mkdir -p "$APPDIR/usr/lib/yy_light"
           cp -r "$BUNDLE"/* "$APPDIR/usr/lib/yy_light/"
 
@@ -279,7 +221,7 @@ jobs:
           #!/bin/bash
           HERE="$(dirname "$(readlink -f "$0")")"
           export LD_LIBRARY_PATH="$HERE/usr/lib/yy_light/lib:$HERE/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
-          exec "$HERE/usr/lib/yy_light/rustdesk" "$@"
+          exec "$HERE/usr/lib/yy_light/yy_light" "$@"
           EOSCRIPT
           chmod +x "$APPDIR/AppRun"
           cat > "$APPDIR/yy_light.desktop" << 'EODESK'
@@ -306,13 +248,11 @@ jobs:
           path: dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.AppImage
 
   # ============================================================
-  # Windows — 绿色版目录打包 zip
-  # 与 build-control.yml 的 Windows job 同构，区别：
-  #   - 不带 yy_control feature，带 unix-file-copy-paste
-  #   - YY_MODE=light
+  # Windows — 临时禁用（慢 + 产物有问题，Linux 通过后恢复）
   # ============================================================
   build-windows:
     name: Windows PC light zip (${{ matrix.variant }})
+    if: false  # 临时禁用
     needs: [setup-matrix, bump-version]
     runs-on: windows-2022
     strategy:
@@ -436,7 +376,7 @@ jobs:
   # ============================================================
   release:
     name: Create PC Light Release
-    needs: [bump-version, build-linux, build-windows]
+    needs: [bump-version, build-linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -465,7 +405,7 @@ jobs:
             for f in "$GITHUB_WORKSPACE"/dist/*; do
               [ -f "$f" ] && echo "- $(basename "$f")"
             done
-            printf '\n### 平台\n- Linux x86_64 (AppImage，下载后 chmod +x 直接运行)\n- Windows x86_64 (绿色版 zip，解压即用)'
+            printf '\n### 平台\n- Linux x86_64 (AppImage，下载后 chmod +x 直接运行)'
           } > /tmp/release-notes.md
           echo "=== 调用 gh release create ==="
           gh release create "$TAG" \
