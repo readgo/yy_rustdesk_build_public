@@ -361,7 +361,9 @@ jobs:
           # 读取顺序: 版本脚本覆盖值 > 基脚本默认值
           $scriptFile = "${{ matrix.script }}"
           if (-not $scriptFile) { $scriptFile = "build_light_pc_flutter.sh" }
-          $cfgVars = @("YY_MQTT_HOST","YY_MQTT_PORT","YY_MQTT_USER","YY_MQTT_PASS","YY_TERMINAL_URL","YY_SECRET_KEY")
+          # matrix.server_url/key 可能为空（secrets 未配），统一从脚本读：
+          # 版本脚本 export 覆盖 > 基脚本默认值（与 Linux 完全一致）
+          $cfgVars = @("YY_SERVER_URL","YY_KEY","YY_MQTT_HOST","YY_MQTT_PORT","YY_MQTT_USER","YY_MQTT_PASS","YY_TERMINAL_URL","YY_SECRET_KEY")
           $values = @{}
           # 1. 基脚本默认值 (${VAR:-default})
           $baseScript = Get-Content "build_light_pc_flutter.sh" -Raw
