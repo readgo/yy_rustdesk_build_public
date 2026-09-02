@@ -100,7 +100,7 @@ jobs:
           done
       - id: gen
         run: |
-          MATRIX='[{"variant":"yy_light","app_name":"yy_light","artifact":"yy-light","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}"}]'
+          MATRIX='[{"variant":"yy_light","app_name":"yy_light","artifact":"yy-light","server_url":"${{ secrets.YY_SERVER_URL }}","key":"${{ secrets.YY_KEY }}","script":"build_light_pc_flutter.sh"}]'
           VERSION_SCRIPTS=""
           for f in build_light_pc_*.sh; do
             case "$(basename "$f")" in
@@ -123,7 +123,7 @@ jobs:
               continue
             fi
             ARTIFACT=$(echo "$APP_NAME" | tr '_' '-')
-            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','app_name':'$APP_NAME','artifact':'$ARTIFACT','server_url':'$SERVER','key':'$KEY'}); print(json.dumps(extra))")
+            EXTRA=$(echo "$EXTRA" | python3 -c "import json,sys; extra=json.load(sys.stdin); extra.append({'variant':'$VARIANT','app_name':'$APP_NAME','artifact':'$ARTIFACT','server_url':'$SERVER','key':'$KEY','script':'$f'}); print(json.dumps(extra))")
           done
           MATRIX=$(echo "$MATRIX" | python3 -c "import json,sys; m=json.load(sys.stdin); m.extend(json.loads('''$EXTRA''')); print(json.dumps(m))")
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
@@ -355,15 +355,34 @@ jobs:
           $env:YY_SERVER_URL = "${{ matrix.server_url }}"
           $env:YY_KEY = "${{ matrix.key }}"
           $env:YY_APP_NAME = "${{ matrix.app_name }}"
-          # 从 build_light_pc_flutter.sh 读取默认值（单一配置源，与 Linux 一致，
-          # 不在此硬编码任何秘密；脚本 ${VAR:-default} 是权威默认）
-          $script = Get-Content "build_light_pc_flutter.sh" -Raw
-          # 解析脚本里 ${VAR:-default} 注入 cargo env（脚本是唯一配置源）
-          foreach ($var in @("YY_MQTT_HOST","YY_MQTT_PORT","YY_MQTT_USER","YY_MQTT_PASS","YY_TERMINAL_URL","YY_SECRET_KEY")) {
-            $m = [regex]::Match($script, [regex]::Escape($var) + '="\$\{' + [regex]::Escape($var) + ':-([^}]*)\}"')
-            if ($m.Success) {
-              $val = $m.Groups[1].Value
-              Set-Item -Path "env:$var" -Value $val
+          # 从对应版本的 Linux 脚本读取默认值（单一配置源，与 Linux 一致，
+          # 不在此硬编码任何秘密；matrix.script 指定版本脚本）
+          # 基脚本 (build_light_pc_flutter.sh) 用 ${VAR:-default} 模式；
+          # 版本脚本 (build_light_pc_*.sh) 用 export VAR="value" 直接覆盖。
+          # 读取顺序: 版本脚本覆盖值 > 基脚本默认值
+          $scriptFile = "${{ matrix.script }}"
+          if (-not $scriptFile) { $scriptFile = "build_light_pc_flutter.sh" }
+          $cfgVars = @("YY_MQTT_HOST","YY_MQTT_PORT","YY_MQTT_USER","YY_MQTT_PASS","YY_TERMINAL_URL","YY_SECRET_KEY")
+          $values = @{}
+          # 1. 基脚本默认值 (${VAR:-default})
+          $baseScript = Get-Content "build_light_pc_flutter.sh" -Raw
+          foreach ($var in $cfgVars) {
+            $m = [regex]::Match($baseScript, [regex]::Escape($var) + '="\$\{' + [regex]::Escape($var) + ':-([^}]*)\}"')
+            if ($m.Success) { $values[$var] = $m.Groups[1].Value }
+          }
+          # 2. 版本脚本覆盖 (export VAR="value" 或 ${VAR:-default})
+          if ($scriptFile -ne "build_light_pc_flutter.sh" -and (Test-Path $scriptFile)) {
+            $verScript = Get-Content $scriptFile -Raw
+            foreach ($var in $cfgVars) {
+              $m1 = [regex]::Match($verScript, 'export ' + [regex]::Escape($var) + '="([^"]*)"')
+              $m2 = [regex]::Match($verScript, [regex]::Escape($var) + '="\$\{' + [regex]::Escape($var) + ':-([^}]*)\}"')
+              if ($m1.Success) { $values[$var] = $m1.Groups[1].Value }
+              elseif ($m2.Success) { $values[$var] = $m2.Groups[1].Value }
+            }
+          }
+          foreach ($var in $cfgVars) {
+            if ($values.ContainsKey($var)) {
+              Set-Item -Path "env:$var" -Value $values[$var]
               Write-Host "从脚本读取 $var"
             } else {
               Write-Error "脚本中未找到 $var 默认值，请检查 build_light_pc_flutter.sh"
