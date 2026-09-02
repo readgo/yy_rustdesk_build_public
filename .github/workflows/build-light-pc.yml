@@ -282,15 +282,28 @@ jobs:
           channel: stable
           flutter-version: '3.24.5'
 
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: '120deac3062162151622ca4860575a33844ba10b'
-          doNotCache: false
+      - name: Setup vcpkg (manual clone + bootstrap, 不用 lukka action)
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_ROOT) {
+            $env:VCPKG_ROOT = "D:\vcpkg"
+          }
+          Write-Host "VCPKG_ROOT=$env:VCPKG_ROOT"
+          echo "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          if (-not (Test-Path "$env:VCPKG_ROOT\vcpkg.exe")) {
+            if (-not (Test-Path "$env:VCPKG_ROOT")) {
+              New-Item -ItemType Directory -Force -Path "$env:VCPKG_ROOT" | Out-Null
+              git clone --depth 1 https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
+            }
+            & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          }
+          Write-Host "vcpkg ready: $env:VCPKG_ROOT"
 
       - name: Install vcpkg dependencies
+        shell: pwsh
         run: |
-          & "$env:VCPKG_ROOT\vcpkg" install --triplet x64-windows-static `
+          # 完整安装（与 Linux 脚本对齐：opus/vpx 等全部依赖）
+          & "$env:VCPKG_ROOT\vcpkg" install --triplet x64-windows-static --keep-going `
             --x-install-root="$env:VCPKG_ROOT\installed"
           $opusInc = "$env:VCPKG_ROOT\installed\x64-windows-static\include\opus"
           if (-not (Test-Path "$opusInc\opus_multistream.h")) {
@@ -298,7 +311,6 @@ jobs:
             exit 1
           }
           Write-Host "OK: opus found"
-        shell: pwsh
 
       - name: Set Rust env vars for vcpkg
         shell: pwsh
