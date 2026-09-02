@@ -293,16 +293,9 @@ jobs:
           if (-not (Test-Path "$env:VCPKG_ROOT\vcpkg.exe")) {
             if (-not (Test-Path "$env:VCPKG_ROOT")) {
               New-Item -ItemType Directory -Force -Path "$env:VCPKG_ROOT" | Out-Null
-              git clone --depth 1 https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
-              # vcpkg.json baseline 需要历史 commit：fetch 指定 baseline（避免完整 clone 500MB+）
-              # baseline 位置: vcpkg-configuration.default-registry.baseline
-              $VCPKG_JSON = Get-Content "vcpkg.json" -Raw | ConvertFrom-Json
-              $BASELINE = $VCPKG_JSON."vcpkg-configuration"."default-registry".baseline
-              if (-not $BASELINE) {
-                $BASELINE = "120deac3062162151622ca4860575a33844ba10b"
-              }
-              Write-Host "Fetching vcpkg baseline: $BASELINE"
-              git -C "$env:VCPKG_ROOT" fetch --depth 1 origin $BASELINE
+              # 完整 clone：vcpkg install 需要 baseline 及其引用的 ports 历史 commit
+              # （shallow + 单 baseline fetch 仍会 unpack tree object 失败）
+              git clone https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
             }
             & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
           }
