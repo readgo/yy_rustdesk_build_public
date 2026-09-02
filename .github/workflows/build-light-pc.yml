@@ -306,7 +306,16 @@ jobs:
         run: |
           # 完整安装（与 Linux 脚本对齐：opus/vpx 等全部依赖）
           & "$env:VCPKG_ROOT\vcpkg" install --triplet x64-windows-static --keep-going `
-            --x-install-root="$env:VCPKG_ROOT\installed"
+            --x-install-root="$env:VCPKG_ROOT\installed" 2>&1
+          $installExit = $LASTEXITCODE
+          if ($installExit -ne 0) {
+            Write-Host "=== vcpkg install 失败，输出 aom 错误日志 ==="
+            Get-ChildItem "$env:VCPKG_ROOT\buildtrees\aom" -Filter "*.log" -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "--- $($_.Name) ---"
+              Get-Content $_.FullName -Tail 30 -ErrorAction SilentlyContinue
+            }
+            exit $installExit
+          }
           $opusInc = "$env:VCPKG_ROOT\installed\x64-windows-static\include\opus"
           if (-not (Test-Path "$opusInc\opus_multistream.h")) {
             Write-Error "ERROR: opus headers missing at $opusInc"
