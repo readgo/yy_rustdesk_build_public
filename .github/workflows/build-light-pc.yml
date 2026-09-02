@@ -301,6 +301,24 @@ jobs:
           }
           Write-Host "vcpkg ready: $env:VCPKG_ROOT"
 
+      - name: Install NASM 2.16 (aom 需要 -Ox, vcpkg 自带 3.01 不支持)
+        shell: pwsh
+        run: |
+          # aom 的 test_nasm 检查 nasm -hf 含 "-Ox"；vcpkg 下载的 nasm 3.01
+          # 输出格式不含 -Ox → 用 2.16（与 Linux 一致）。放 PATH 前，让
+          # vcpkg_find_acquire_program(NASM) 找到它。
+          $nasmDir = "D:\nasm-2.16"
+          if (-not (Test-Path "$nasmDir\nasm.exe")) {
+            New-Item -ItemType Directory -Force -Path $nasmDir | Out-Null
+            curl.exe -sL -o "$nasmDir\nasm.zip" "https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip"
+            Expand-Archive -Path "$nasmDir\nasm.zip" -DestinationPath $nasmDir -Force
+            Get-ChildItem "$nasmDir" -Recurse -Filter "nasm.exe" | ForEach-Object {
+              Copy-Item $_.FullName "$nasmDir\nasm.exe" -Force
+            }
+          }
+          Write-Host "PATH 前插入 nasm: $nasmDir"
+          echo "$nasmDir" >> $env:GITHUB_PATH
+
       - name: Install vcpkg dependencies
         shell: pwsh
         run: |
