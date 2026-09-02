@@ -225,11 +225,11 @@ jobs:
           path: dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.AppImage
 
   # ============================================================
-  # Windows — 临时禁用（慢 + 产物有问题，Linux 通过后恢复）
+  # Windows — 绿色版目录打包 zip
+  # 参数与 Linux 完全对齐（MQTT/TERMINAL/SECRET 用脚本默认值 = APK 正式参数）
   # ============================================================
   build-windows:
     name: Windows PC light zip (${{ matrix.variant }})
-    if: false  # 临时禁用
     needs: [setup-matrix, bump-version]
     runs-on: windows-2022
     strategy:
@@ -313,23 +313,17 @@ jobs:
           $env:YY_SERVER_URL = "${{ matrix.server_url }}"
           $env:YY_KEY = "${{ matrix.key }}"
           $env:YY_APP_NAME = "${{ matrix.app_name }}"
-          $env:YY_MQTT_HOST = "${{ secrets.YY_MQTT_HOST || 'localhost' }}"
-          $env:YY_MQTT_PORT = "${{ secrets.YY_MQTT_PORT || '1883' }}"
-          $env:YY_MQTT_USER = "${{ secrets.YY_MQTT_USER || '' }}"
-          $env:YY_MQTT_PASS = "${{ secrets.YY_MQTT_PASS || '' }}"
-          $env:YY_TERMINAL_URL = "${{ secrets.YY_TERMINAL_URL || '' }}"
-          $env:YY_SECRET_KEY = "${{ secrets.YY_SECRET_KEY || '' }}"
+          # MQTT / terminal-url / secret-key 不传：与 Linux 一致，
+          # 走编译期默认值（= APK 正式参数 remote.yyvendor.com / wtt / https://remote.yyvendor.com/api/v1/device/）
           $env:PC_LIGHT_VERSION = "${{ needs.bump-version.outputs.version }}"
-          cargo build --lib --release --features flutter,yy_light
+          cargo build --lib --release --features flutter,yy_light,unix-file-copy-paste
 
       - name: Build Flutter Windows
         shell: pwsh
         run: |
           cd flutter
           flutter build windows --release `
-            --dart-define=YY_MODE=light `
-            --dart-define=YY_TERMINAL_URL="${{ secrets.YY_TERMINAL_URL }}" `
-            --dart-define=YY_SECRET_KEY="${{ secrets.YY_SECRET_KEY }}"
+            --dart-define=YY_MODE=light
 
       - name: Package Windows bundle
         shell: pwsh
@@ -353,7 +347,7 @@ jobs:
   # ============================================================
   release:
     name: Create PC Light Release
-    needs: [bump-version, build-linux]
+    needs: [bump-version, build-linux, build-windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
