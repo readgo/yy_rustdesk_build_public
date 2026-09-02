@@ -135,7 +135,6 @@ jobs:
   # ============================================================
   build-linux:
     name: Linux PC light AppImage (${{ matrix.variant }})
-    if: false  # 临时禁用：Windows CI 修复期间只跑 Windows 加速迭代
     needs: [setup-matrix, bump-version]
     runs-on: ubuntu-22.04
     strategy:
@@ -422,7 +421,7 @@ jobs:
   # ============================================================
   release:
     name: Create PC Light Release
-    needs: [bump-version, build-windows]  # 临时去掉 build-linux（Linux 禁用中）
+    needs: [bump-version, build-windows, build-linux]  # Linux 已恢复
     runs-on: ubuntu-24.04
     permissions:
       contents: write
