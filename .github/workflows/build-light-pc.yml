@@ -355,8 +355,21 @@ jobs:
           $env:YY_SERVER_URL = "${{ matrix.server_url }}"
           $env:YY_KEY = "${{ matrix.key }}"
           $env:YY_APP_NAME = "${{ matrix.app_name }}"
-          # MQTT / terminal-url / secret-key 不传：与 Linux 一致，
-          # 走编译期默认值（= APK 正式参数 remote.yyvendor.com / wtt / https://remote.yyvendor.com/api/v1/device/）
+          # 从 build_light_pc_flutter.sh 读取默认值（单一配置源，与 Linux 一致，
+          # 不在此硬编码任何秘密；脚本 ${VAR:-default} 是权威默认）
+          $script = Get-Content "build_light_pc_flutter.sh" -Raw
+          # 解析脚本里 ${VAR:-default} 注入 cargo env（脚本是唯一配置源）
+          foreach ($var in @("YY_MQTT_HOST","YY_MQTT_PORT","YY_MQTT_USER","YY_MQTT_PASS","YY_TERMINAL_URL","YY_SECRET_KEY")) {
+            $m = [regex]::Match($script, [regex]::Escape($var) + '="\$\{' + [regex]::Escape($var) + ':-([^}]*)\}"')
+            if ($m.Success) {
+              $val = $m.Groups[1].Value
+              Set-Item -Path "env:$var" -Value $val
+              Write-Host "从脚本读取 $var"
+            } else {
+              Write-Error "脚本中未找到 $var 默认值，请检查 build_light_pc_flutter.sh"
+              exit 1
+            }
+          }
           $env:PC_LIGHT_VERSION = "${{ needs.bump-version.outputs.version }}"
           cargo build --lib --release --features flutter,yy_light,unix-file-copy-paste
 
