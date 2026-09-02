@@ -390,7 +390,8 @@ jobs:
             }
           }
           $env:PC_LIGHT_VERSION = "${{ needs.bump-version.outputs.version }}"
-          cargo build --lib --release --features flutter,yy_light,unix-file-copy-paste
+          # unix-file-copy-paste 是 unix-only，Windows 不启用（否则会把 FILE_NAME/unix_file_clip 等 unix 代码带到 Windows 导致编译失败）
+          cargo build --lib --release --features flutter,yy_light
 
       - name: Build Flutter Windows
         shell: pwsh
