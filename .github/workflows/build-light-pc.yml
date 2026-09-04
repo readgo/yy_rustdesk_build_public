@@ -130,11 +130,11 @@ jobs:
           echo "生成矩阵: $MATRIX"
 
   # ============================================================
-  # Linux — AppImage（下载即可用，无需解压）
+  # Linux — tar.gz 绿色目录（解压即用；主形态，规避 AppImage FUSE Bus error）
   # 依赖 apt 系统包 + pkg-config (不依赖 vcpkg ffmpeg，light 不编译 hwcodec)
   # ============================================================
   build-linux:
-    name: Linux PC light AppImage (${{ matrix.variant }})
+    name: Linux PC light tar.gz (${{ matrix.variant }})
     needs: [setup-matrix, bump-version]
     runs-on: ubuntu-22.04
     strategy:
@@ -175,54 +175,25 @@ jobs:
           PC_LIGHT_VERSION: ${{ needs.bump-version.outputs.version }}
           SKIP_SYSTEM_DEPS: ''
 
-      - name: Download appimagetool
+      - name: Package tar.gz (Linux 绿色目录主形态)
         run: |
-          curl -sL \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
-            -o /tmp/appimagetool
-          chmod +x /tmp/appimagetool
-
-      - name: Package AppImage
-        run: |
-          APPDIR=$(mktemp -d)
+          # Linux 主形态 = tar.gz 绿色目录（解压即用，直接跑目录内 yy_light，无 AppImage FUSE）
+          # 背景: AppImage FUSE 挂载在 Deepin/新内核(6.x) mmap 访问 SIGBUS (Bus error)，
+          #       绿色目录无此问题；OTA 自更新走目录切换语义（zip/targz 同）。
           BUNDLE="dist/${{ matrix.artifact }}-flutter-linux-x86_64"
-          mkdir -p "$APPDIR/usr/lib/yy_light"
-          cp -r "$BUNDLE"/* "$APPDIR/usr/lib/yy_light/"
-
-          # 注意：不打包系统库 (GTK/pango/glib 等)！
-          # 依赖宿主系统已装的 GTK3 库（与本地绿色版一致，绿色版已验证跨发行版可跑）。
-          # 打包 22.04 的系统库会导致与宿主 glib 版本不匹配崩溃
-          # (libpango undefined symbol: g_once_init_leave_pointer)
-
-          cat > "$APPDIR/AppRun" << 'EOSCRIPT'
-          #!/bin/bash
-          HERE="$(dirname "$(readlink -f "$0")")"
-          export LD_LIBRARY_PATH="$HERE/usr/lib/yy_light/lib:$LD_LIBRARY_PATH"
-          exec "$HERE/usr/lib/yy_light/yy_light" "$@"
-          EOSCRIPT
-          chmod +x "$APPDIR/AppRun"
-          cat > "$APPDIR/yy_light.desktop" << 'EODESK'
-          [Desktop Entry]
-          Name=yy_light
-          Comment=Remote Desktop
-          Exec=yy_light
-          Icon=yy_light
-          Type=Application
-          Categories=Network;
-          Terminal=false
-          EODESK
-          convert -size 256x256 xc:transparent -fill "#4A90D9" \
-            -draw "circle 128,128 128,20" "$APPDIR/yy_light.png" || true
-
+          test -f "$BUNDLE/yy_light" || { echo "ERROR: bundle 缺 yy_light"; ls "$BUNDLE"; exit 1; }
+          chmod +x "$BUNDLE/yy_light"
           mkdir -p dist
-          APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool \
-            "$APPDIR" "dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.AppImage"
+          tar czf "dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.tar.gz" \
+            -C dist "${{ matrix.artifact }}-flutter-linux-x86_64"
+          echo "=== tar.gz 产物 ==="
+          ls -la "dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.tar.gz"
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.variant }}-linux-x86_64
-          path: dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.AppImage
+          path: dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.tar.gz
 
   # ============================================================
   # Windows — 绿色版目录打包 zip
@@ -452,7 +423,7 @@ jobs:
             for f in "$GITHUB_WORKSPACE"/dist/*; do
               [ -f "$f" ] && echo "- $(basename "$f")"
             done
-            printf '\n### 平台\n- Linux x86_64 (AppImage，下载后 chmod +x 直接运行)'
+            printf '\n### 平台\n- Linux x86_64 (tar.gz 绿色目录：解压后运行目录内 yy_light)'
           } > /tmp/release-notes.md
           echo "=== 调用 gh release create ==="
           gh release create "$TAG" \
