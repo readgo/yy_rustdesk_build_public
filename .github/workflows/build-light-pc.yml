@@ -180,14 +180,20 @@ jobs:
           # Linux 主形态 = tar.gz 绿色目录（解压即用，直接跑目录内 yy_light，无 AppImage FUSE）
           # 背景: AppImage FUSE 挂载在 Deepin/新内核(6.x) mmap 访问 SIGBUS (Bus error)，
           #       绿色目录无此问题；OTA 自更新走目录切换语义（zip/targz 同）。
-          BUNDLE="dist/${{ matrix.artifact }}-flutter-linux-x86_64"
+          # 结构与 Windows zip 对齐: 解压出 <name>-linux-x86_64-v<version>/ 带版本目录
+          NAME="${{ matrix.artifact }}"
+          VERSION="${{ needs.bump-version.outputs.version }}"
+          BUNDLE="dist/$NAME-flutter-linux-x86_64"
           test -f "$BUNDLE/yy_light" || { echo "ERROR: bundle 缺 yy_light"; ls "$BUNDLE"; exit 1; }
           chmod +x "$BUNDLE/yy_light"
           mkdir -p dist
-          tar czf "dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.tar.gz" \
-            -C dist "${{ matrix.artifact }}-flutter-linux-x86_64"
-          echo "=== tar.gz 产物 ==="
-          ls -la "dist/${{ matrix.artifact }}-linux-x86_64-v${{ needs.bump-version.outputs.version }}.tar.gz"
+          # 打包时目录内层带版本名：dist/<name>-linux-x86_64-v<ver>/
+          tar czf "dist/$NAME-linux-x86_64-v$VERSION.tar.gz" \
+            --transform "s|^$NAME-flutter-linux-x86_64|$NAME-linux-x86_64-v$VERSION|" \
+            -C dist "$NAME-flutter-linux-x86_64"
+          echo "=== tar.gz 产物（解压后目录名带版本）==="
+          ls -la "dist/$NAME-linux-x86_64-v$VERSION.tar.gz"
+          tar tzf "dist/$NAME-linux-x86_64-v$VERSION.tar.gz" | head -5
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v7
