@@ -80,6 +80,13 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        # ★ 2026-09-15 起 Google 从 SDK 仓库下线了废弃的 tools 包
+        #   （repository2-3.xml 不再列出，上游 issue: android-actions/setup-android#537）。
+        #   action 默认 packages 为 "tools platform-tools" → sdkmanager 找不到 tools
+        #   直接 exit 1。显式只装 platform-tools 规避；build-tools/platform 由
+        #   runner 预装 SDK 提供。
+        with:
+          packages: platform-tools
 
       - name: Link Android SDK for build_light.sh
         run: |
