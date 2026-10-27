@@ -253,7 +253,11 @@ jobs:
           }
 
           echo "=== 开始 build_light.sh (light 标准版) ==="
-          bash flutter/build_light.sh
+          # APK 是被控端 2.0.x：版本来自 Cargo.toml，**不能**启用 Rust 侧 yy_light
+          # （那会走 PC_LIGHT_VERSION 分支，版本号变成 1.0.x 甚至 not-set）。
+          # YY_MODE 仍为 light → Dart UI / 定制资源 / MQTT dart-define 保持 light 行为，
+          # 只有 Rust core 的 light feature 关闭。
+          YY_MODE=light YY_CORE_FEATURE_LIGHT=0 bash flutter/build_light.sh
           copy_apk "yy-desk-android-v${VERSION}.apk"
 
           # 扫描版本脚本（排除 build_light.sh / *local.sh）
