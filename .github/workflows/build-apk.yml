@@ -111,6 +111,16 @@ jobs:
             fi
           fi
 
+      - name: Cache Android NDK r23b
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.home }}/.yy_rustdesk_env/android-ndk-r23b
+          # r23b 内容不变（source.properties = 23.1.7779620），用固定 key。
+          # 解压后约 2.3GB，未命中时每轮都要从 dl.google.com 重下 ~1GB zip，
+          # 跨境网络一抖就整轮失败（run #125：curl (92) HTTP/2 stream not closed cleanly）。
+          # key 末尾的 -v1 是可手动升级的盐：万一缓存被写坏，改成 -v2 即整批失效。
+          key: android-ndk-r23b-linux-v1
+
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
@@ -162,6 +172,12 @@ jobs:
           export ANDROID_NDK_HOME="$NDK_DIR"
           export ANDROID_NDK_ROOT="$NDK_DIR"
 
+          # NDK 缓存完整性校验：解压中断会留下残缺目录，若被缓存下来会毒化之后所有构建。
+          # source.properties 是官方包根目录标志文件，缺它说明解压没完成。
+          if [ -d "$NDK_DIR" ] && [ ! -f "$NDK_DIR/source.properties" ]; then
+            echo "NDK 目录残缺（缺 source.properties），删除重下"
+            rm -rf "$NDK_DIR"
+          fi
           if [ ! -d "$NDK_DIR" ]; then
             echo "=== 下载 NDK r23b ==="
             curl -# -L -o /tmp/ndk-r23b.zip \
