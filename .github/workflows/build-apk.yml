@@ -34,38 +34,11 @@ jobs:
             fi
           done
 
-      - name: Bump patch version
-        run: |
-          git config user.email "jing@yyvendor.com"
-          git config user.name "jing"
-          for RETRY in 1 2 3; do
-            if [ "$RETRY" -gt 1 ]; then
-              echo "重试 $RETRY: 更新本地分支..."
-              git fetch origin "${{ secrets.SOURCE_BRANCH }}" || true
-              git reset --hard "origin/${{ secrets.SOURCE_BRANCH }}" || true
-            fi
-            VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
-            echo "当前版本: $VERSION (尝试 $RETRY)"
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-            NEW_PATCH=$((PATCH + 1))
-            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
-            echo "新版本: $NEW_VERSION"
-            sed -i "s/^version = \"$VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
-            grep '^version' Cargo.toml
-            git add Cargo.toml
-            git commit -m "chore: bump version to $NEW_VERSION" || true
-            if git push origin HEAD:${{ secrets.SOURCE_BRANCH }}; then
-              echo "推送成功"
-              echo "BUMPED_VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
-              exit 0
-            fi
-            echo "推送失败，2秒后重试..."
-            # 恢复 Cargo.toml 以便重试时重新计算
-            git reset --hard HEAD~1 2>/dev/null || true
-            sleep 2
-          done
-          echo "ERROR: 推送失败 3 次"
-          exit 1
+      # 版本自增已挪到 job 末尾（编译成功后才 bump）。
+      # 原来的做法是 clone 完立刻 bump 并推回源码仓，导致每一轮**失败**的构建
+      # 也会把远端版本号 +1：2026-10-28 的 run #124/#125/#126/#127 全挂，
+      # 版本号却从 2.0.37 空涨到 2.0.41，Release 里一堆号没有对应产物。
+      # 现在产物用源码里的当前版本，编译成功后再 +1 留给下一轮。
 
       - name: Install system dependencies
         run: |
@@ -366,3 +339,43 @@ jobs:
           EC=$?
           echo "gh exit code: $EC"
           echo "=== Release 完成 ==="
+
+      # 只有走到这里（编译 + 打包 + 发布全部通过才算成功）才把源码版本 +1。
+      # 编译失败时本步骤不执行，远端版本号保持不变，下一轮重出同一个号。
+      - name: Bump patch version (on success)
+        if: success()
+        run: |
+          git config user.email "jing@yyvendor.com"
+          git config user.name "jing"
+          # 编译过程会改 Cargo.lock 等文件，先把工作区清干净，只提交 Cargo.toml 的版本行
+          git checkout -- . 2>/dev/null || true
+          for RETRY in 1 2 3; do
+            if [ "$RETRY" -gt 1 ]; then
+              echo "重试 $RETRY: 更新本地分支..."
+              git fetch origin "${{ secrets.SOURCE_BRANCH }}" || true
+              git reset --hard "origin/${{ secrets.SOURCE_BRANCH }}" || true
+            fi
+            VERSION=$(grep -oP '^version\s*=\s*"\K[^"]+' Cargo.toml)
+            if [ -z "$VERSION" ]; then
+              echo "ERROR: 读不到 Cargo.toml 版本号"
+              exit 1
+            fi
+            echo "当前版本: $VERSION (尝试 $RETRY)"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+            echo "下一轮版本: $NEW_VERSION"
+            sed -i "s/^version = \"$VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
+            grep '^version' Cargo.toml
+            git add Cargo.toml
+            git commit -m "chore: bump version to $NEW_VERSION" || true
+            if git push origin HEAD:${{ secrets.SOURCE_BRANCH }}; then
+              echo "推送成功，下一轮将产出 v$NEW_VERSION"
+              exit 0
+            fi
+            echo "推送失败，2秒后重试..."
+            git reset --hard HEAD~1 2>/dev/null || true
+            sleep 2
+          done
+          echo "ERROR: 版本号推送失败 3 次（本轮 APK 已发布，需手工 bump）"
+          exit 1
