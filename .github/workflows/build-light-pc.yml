@@ -127,6 +127,7 @@ jobs:
           done
           MATRIX=$(echo "$MATRIX" | python3 -c "import json,sys; m=json.load(sys.stdin); m.extend(json.loads('''$EXTRA''')); print(json.dumps(m))")
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "windows_variants=$MATRIX" >> "$GITHUB_OUTPUT"
           echo "生成矩阵: $MATRIX"
 
   # ============================================================
@@ -214,13 +215,9 @@ jobs:
   # 参数与 Linux 完全对齐（MQTT/TERMINAL/SECRET 用脚本默认值 = APK 正式参数）
   # ============================================================
   build-windows:
-    name: Windows PC light zip (${{ matrix.variant }})
+    name: Windows PC light zip（双变体串行：vcpkg 只装一次，变体失败互不阻断）
     needs: [setup-matrix, bump-version]
     runs-on: windows-2022
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
 
     steps:
       - name: Clone source
@@ -324,14 +321,6 @@ jobs:
       - name: Install vcpkg dependencies
         shell: pwsh
         run: |
-          # ★ 错峰：两个并行 Windows job 的 vcpkg 步骤完全相同（与变体参数无关），
-          #   会同时从相同上游下载同一批源码包，上游对同出口 IP 并发限流时
-          #   后调度的 yutomat 稳定落败（yy-light 三连过 / yutomat 三挂二）。
-          #   非首个变体延迟 90s，错开下载窗口。
-          if ("${{ matrix.variant }}" -ne "yy_light") {
-            Write-Host "非首个变体，延迟 90s 错峰 vcpkg 下载"
-            Start-Sleep -Seconds 90
-          }
           # 完整安装（与 Linux 脚本对齐：opus/vpx 等全部依赖）
           # ★ vcpkg 内建下载重试（默认 3 次）；仍失败时 dump 全部失败 port 的日志
           & "$env:VCPKG_ROOT\vcpkg" install --triplet x64-windows-static --keep-going `
@@ -363,82 +352,101 @@ jobs:
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
           echo "PKG_CONFIG_ALLOW_CROSS=1" >> $env:GITHUB_ENV
 
-      - name: Build Rust CDYLIB
+      - name: Build & Package per variant（串行双变体，单变体失败不阻断后续）
         shell: pwsh
         run: |
-          $env:YY_SERVER_URL = "${{ matrix.server_url }}"
-          $env:YY_KEY = "${{ matrix.key }}"
-          $env:YY_APP_NAME = "${{ matrix.app_name }}"
-          # 从对应版本的 Linux 脚本读取默认值（单一配置源，与 Linux 一致，
-          # 不在此硬编码任何秘密；matrix.script 指定版本脚本）
-          # 基脚本 (build_light_pc_flutter.sh) 用 ${VAR:-default} 模式；
-          # 版本脚本 (build_light_pc_*.sh) 用 export VAR="value" 直接覆盖。
-          # 读取顺序: 版本脚本覆盖值 > 基脚本默认值
-          $scriptFile = "${{ matrix.script }}"
-          if (-not $scriptFile) { $scriptFile = "build_light_pc_flutter.sh" }
-          # matrix.server_url/key 可能为空（secrets 未配），统一从脚本读：
-          # 版本脚本 export 覆盖 > 基脚本默认值（与 Linux 完全一致）
-          $cfgVars = @("YY_SERVER_URL","YY_KEY","YY_MQTT_HOST","YY_MQTT_PORT","YY_MQTT_USER","YY_MQTT_PASS","YY_TERMINAL_URL","YY_SECRET_KEY")
-          $values = @{}
-          # 1. 基脚本默认值 (${VAR:-default})
-          $baseScript = Get-Content "build_light_pc_flutter.sh" -Raw
-          foreach ($var in $cfgVars) {
-            $m = [regex]::Match($baseScript, [regex]::Escape($var) + '="\$\{' + [regex]::Escape($var) + ':-([^}]*)\}"')
-            if ($m.Success) { $values[$var] = $m.Groups[1].Value }
-          }
-          # 2. 版本脚本覆盖 (export VAR="value" 或 ${VAR:-default})
-          if ($scriptFile -ne "build_light_pc_flutter.sh" -and (Test-Path $scriptFile)) {
-            $verScript = Get-Content $scriptFile -Raw
+          $variants = '${{ needs.setup-matrix.outputs.windows_variants }}' | ConvertFrom-Json
+          $failed = @()
+          foreach ($v in $variants) {
+            Write-Host "============================================================"
+            Write-Host "===== 构建 $($v.variant)（artifact=$($v.artifact)）====="
+            $env:YY_SERVER_URL = $v.server_url
+            $env:YY_KEY = $v.key
+            $env:YY_APP_NAME = $v.app_name
+            # 从对应版本的脚本读取默认值（单一配置源，与原 Build Rust CDYLIB 逻辑一致）：
+            # 版本脚本覆盖值 > 基脚本默认值
+            $scriptFile = $v.script
+            if (-not $scriptFile) { $scriptFile = "build_light_pc_flutter.sh" }
+            $cfgVars = @("YY_SERVER_URL","YY_KEY","YY_MQTT_HOST","YY_MQTT_PORT","YY_MQTT_USER","YY_MQTT_PASS","YY_TERMINAL_URL","YY_SECRET_KEY")
+            $values = @{}
+            $baseScript = Get-Content "build_light_pc_flutter.sh" -Raw
             foreach ($var in $cfgVars) {
-              $m1 = [regex]::Match($verScript, 'export ' + [regex]::Escape($var) + '="([^"]*)"')
-              $m2 = [regex]::Match($verScript, [regex]::Escape($var) + '="\$\{' + [regex]::Escape($var) + ':-([^}]*)\}"')
-              if ($m1.Success) { $values[$var] = $m1.Groups[1].Value }
-              elseif ($m2.Success) { $values[$var] = $m2.Groups[1].Value }
+              $m = [regex]::Match($baseScript, [regex]::Escape($var) + '="\$\{' + [regex]::Escape($var) + ':-([^}]*)\}"')
+              if ($m.Success) { $values[$var] = $m.Groups[1].Value }
             }
-          }
-          foreach ($var in $cfgVars) {
-            if ($values.ContainsKey($var)) {
-              Set-Item -Path "env:$var" -Value $values[$var]
-              Write-Host "从脚本读取 $var"
-            } else {
-              Write-Error "脚本中未找到 $var 默认值，请检查 build_light_pc_flutter.sh"
-              exit 1
+            if ($scriptFile -ne "build_light_pc_flutter.sh" -and (Test-Path $scriptFile)) {
+              $verScript = Get-Content $scriptFile -Raw
+              foreach ($var in $cfgVars) {
+                $m1 = [regex]::Match($verScript, 'export ' + [regex]::Escape($var) + '="([^"]*)"')
+                $m2 = [regex]::Match($verScript, [regex]::Escape($var) + '="\$\{' + [regex]::Escape($var) + ':-([^}]*)\}"')
+                if ($m1.Success) { $values[$var] = $m1.Groups[1].Value }
+                elseif ($m2.Success) { $values[$var] = $m2.Groups[1].Value }
+              }
             }
+            $cfgOk = $true
+            foreach ($var in $cfgVars) {
+              if ($values.ContainsKey($var)) {
+                Set-Item -Path "env:$var" -Value $values[$var]
+                Write-Host "从脚本读取 $var"
+              } else {
+                Write-Error "脚本中未找到 $var 默认值，请检查 build_light_pc_flutter.sh"
+                $cfgOk = $false
+              }
+            }
+            if (-not $cfgOk) { $failed += "$($v.variant):config"; continue }
+            $env:PC_LIGHT_VERSION = "${{ needs.bump-version.outputs.version }}"
+            # unix-file-copy-paste 是 unix-only，Windows 不启用（否则引入 unix 代码导致编译失败）
+            cargo build --lib --release --features flutter,yy_light
+            if ($LASTEXITCODE -ne 0) { $failed += "$($v.variant):cargo"; continue }
+
+            Push-Location flutter
+            try {
+              flutter build windows --release --dart-define=YY_MODE=light
+              if ($LASTEXITCODE -ne 0) { $failed += "$($v.variant):flutter"; continue }
+            } finally {
+              Pop-Location
+            }
+
+            $BUNDLE = "flutter\build\windows\x64\runner\Release"
+            $NAME = $v.artifact
+            $VERSION = $env:PC_LIGHT_VERSION
+            $OUTPUT = "dist\$NAME-windows-x86_64-v$VERSION"
+            New-Item -ItemType Directory -Force -Path $OUTPUT
+            Copy-Item "$BUNDLE\*" "$OUTPUT\" -Recurse -Force
+            Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\$NAME-windows-x86_64-v$VERSION.zip" -Force
+            Write-Host "===== $($v.variant) 完成 ====="
           }
-          $env:PC_LIGHT_VERSION = "${{ needs.bump-version.outputs.version }}"
-          # unix-file-copy-paste 是 unix-only，Windows 不启用（否则会把 FILE_NAME/unix_file_clip 等 unix 代码带到 Windows 导致编译失败）
-          cargo build --lib --release --features flutter,yy_light
+          if ($failed.Count -gt 0) {
+            echo "failed_variants=$($failed -join ',')" >> $env:GITHUB_ENV
+          }
 
-      - name: Build Flutter Windows
-        shell: pwsh
-        run: |
-          cd flutter
-          flutter build windows --release `
-            --dart-define=YY_MODE=light
-
-      - name: Package Windows bundle
-        shell: pwsh
-        run: |
-          $BUNDLE = "flutter\build\windows\x64\runner\Release"
-          $NAME = "${{ matrix.artifact }}"
-          $VERSION = "${{ needs.bump-version.outputs.version }}"
-          $OUTPUT = "dist\$NAME-windows-x86_64-v$VERSION"
-          New-Item -ItemType Directory -Force -Path $OUTPUT
-          Copy-Item "$BUNDLE\*" "$OUTPUT\" -Recurse -Force
-          Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\$NAME-windows-x86_64-v$VERSION.zip"
-
-      - name: Upload Windows artifact
+      - name: Upload Windows artifacts
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.variant }}-windows-x86_64
-          path: dist/${{ matrix.artifact }}-windows-x86_64-v${{ needs.bump-version.outputs.version }}.zip
+          name: windows-x86_64
+          path: dist/*.zip
+          if-no-files-found: warn
+
+      - name: Fail if any variant failed
+        if: always() && env.failed_variants != ''
+        run: |
+          Write-Host "以下变体构建失败（其余变体产物已上传）: $env:failed_variants"
+          exit 1
 
   # ============================================================
   # Job: 发布 GitHub Release
   # ============================================================
   release:
     name: Create PC Light Release
-    needs: [bump-version, build-windows, build-linux]  # Linux 已恢复
+    # ★ 部分发布：只要 bump/Linux 成功就发布现有产物。Windows 单变体失败时，
+    #   成功变体的 zip 照常发布（缺失的变体下次构建补上），不再被整组失败扣住。
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.bump-version.result == 'success' &&
+      needs.build-linux.result == 'success'
+    needs: [bump-version, build-windows, build-linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
