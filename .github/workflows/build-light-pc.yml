@@ -174,6 +174,10 @@ jobs:
           YY_OUTPUT_NAME: ${{ matrix.artifact }}
           PC_LIGHT_VERSION: ${{ needs.bump-version.outputs.version }}
           SKIP_SYSTEM_DEPS: ''
+          # ★ runner 在海外，必须用 Flutter 官方源。脚本默认 flutter-io.cn（国内镜像），
+          #   跨洋下载 ~700MB SDK 速度爬到 0.1%，最后 HTTP/2 断流 curl (92) 整个 job 失败
+          #   （2026-11-20 release-light-20261120114224 Linux yutomat 事故）
+          FLUTTER_STORAGE_BASE_URL: https://storage.googleapis.com
 
       - name: Package tar.gz (Linux 绿色目录主形态)
         run: |
