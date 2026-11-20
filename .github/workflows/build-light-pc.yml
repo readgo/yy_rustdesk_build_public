@@ -178,6 +178,10 @@ jobs:
           #   跨洋下载 ~700MB SDK 速度爬到 0.1%，最后 HTTP/2 断流 curl (92) 整个 job 失败
           #   （2026-11-20 release-light-20261120114224 Linux yutomat 事故）
           FLUTTER_STORAGE_BASE_URL: https://storage.googleapis.com
+          # ★ 锁定 Rust 版本：runner 镜像的 rust 随更新浮动，2026-11 的新 rustc 类型推断
+          #   变化（rust#148922）让老依赖 wl-clipboard-rs 0.9.0 编译失败 E0277。本地 1.96.0
+          #   全依赖验证通过，锁同一版本保证 CI 与本地一致
+          RUSTUP_TOOLCHAIN: 1.96.0
 
       - name: Package tar.gz (Linux 绿色目录主形态)
         run: |
@@ -247,7 +251,7 @@ jobs:
         shell: pwsh
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.96.0
         with:
           targets: x86_64-pc-windows-msvc
 
