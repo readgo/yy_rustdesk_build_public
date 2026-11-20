@@ -280,7 +280,10 @@ jobs:
               New-Item -ItemType Directory -Force -Path "$env:VCPKG_ROOT" | Out-Null
               # 完整 clone：vcpkg install 需要 baseline 及其引用的 ports 历史 commit
               # （shallow + 单 baseline fetch 仍会 unpack tree object 失败）
-              git clone https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
+              # ★ 锁定版本：master 浮动已两次翻车（aom.pc 产物变化让
+              #   vcpkg_replace_string 落空 → post-build validation 失败）。
+              #   2026.10.16 = 2026-10-27 上次构建成功时的最近版本快照
+              git clone --branch 2026.10.16 https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
             }
             & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
           }
