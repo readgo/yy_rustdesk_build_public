@@ -310,6 +310,14 @@ jobs:
       - name: Install vcpkg dependencies
         shell: pwsh
         run: |
+          # ★ 错峰：两个并行 Windows job 的 vcpkg 步骤完全相同（与变体参数无关），
+          #   会同时从相同上游下载同一批源码包，上游对同出口 IP 并发限流时
+          #   后调度的 yutomat 稳定落败（yy-light 三连过 / yutomat 三挂二）。
+          #   非首个变体延迟 90s，错开下载窗口。
+          if ("${{ matrix.variant }}" -ne "yy_light") {
+            Write-Host "非首个变体，延迟 90s 错峰 vcpkg 下载"
+            Start-Sleep -Seconds 90
+          }
           # 完整安装（与 Linux 脚本对齐：opus/vpx 等全部依赖）
           # ★ vcpkg 内建下载重试（默认 3 次）；仍失败时 dump 全部失败 port 的日志
           & "$env:VCPKG_ROOT\vcpkg" install --triplet x64-windows-static --keep-going `
