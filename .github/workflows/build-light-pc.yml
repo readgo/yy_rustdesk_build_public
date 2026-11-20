@@ -289,6 +289,20 @@ jobs:
           }
           Write-Host "vcpkg ready: $env:VCPKG_ROOT"
 
+      - name: Cache vcpkg (downloads + installed)
+        uses: actions/cache@v4
+        with:
+          # ★ 每次全新 runner 都要从上游重下源码包并全量编译，上游限流时 job 随机挂
+          #   （2026-11-20 连挂三天：aom 端口产物变化、ffmpeg 等下载抖动）。
+          #   缓存 downloads（源码包，不再碰上游）+ installed（编译产物，跳过编译）。
+          #   save key 带 run_id 保证唯一；restore 用前缀匹配最近一次成功构建的缓存
+          key: vcpkg-2026.10.16-x64-windows-static-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-2026.10.16-x64-windows-static-
+          path: |
+            D:\vcpkg\downloads
+            D:\vcpkg\installed
+
       - name: Install NASM 2.16 (aom 需要 -Ox, vcpkg 自带 3.01 不支持)
         shell: pwsh
         run: |
