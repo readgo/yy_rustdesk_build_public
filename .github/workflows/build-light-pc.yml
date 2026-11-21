@@ -82,6 +82,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
+      windows_variants: ${{ steps.gen.outputs.windows_variants }}
     steps:
       - name: Clone source
         run: |
@@ -356,6 +357,10 @@ jobs:
         shell: pwsh
         run: |
           $variants = '${{ needs.setup-matrix.outputs.windows_variants }}' | ConvertFrom-Json
+          if (-not $variants -or @($variants).Count -eq 0) {
+            Write-Error "windows_variants 为空——setup-matrix 的 outputs 声明或 gen 脚本有问题，拒绝静默空跑"
+            exit 1
+          }
           $failed = @()
           foreach ($v in $variants) {
             Write-Host "============================================================"
