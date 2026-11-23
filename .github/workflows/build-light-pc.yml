@@ -353,6 +353,18 @@ jobs:
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
           echo "PKG_CONFIG_ALLOW_CROSS=1" >> $env:GITHUB_ENV
 
+      - name: Build WindowInjection.dll（隐私模式置顶窗口注入 DLL，锁上游 v0.3）
+        shell: pwsh
+        run: |
+          git clone https://github.com/rustdesk-org/RustDeskTempTopMostWindow RustDeskTempTopMostWindow
+          cd RustDeskTempTopMostWindow && git checkout 53b548a5398624f7149a382000397993542ad796
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if (-not $msbuild) { Write-Error "MSBuild not found"; exit 1 }
+          & $msbuild "WindowInjection/WindowInjection.vcxproj" -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
+          if ($LASTEXITCODE -ne 0) { Write-Error "WindowInjection.dll build failed"; exit 1 }
+          Copy-Item "RustDeskTempTopMostWindow/WindowInjection/x64/Release/WindowInjection.dll" "WindowInjection.dll"
+          Get-Item "WindowInjection.dll" | Format-List Name,Length
+
       - name: Build & Package per variant（串行双变体，单变体失败不阻断后续）
         shell: pwsh
         run: |
@@ -418,6 +430,8 @@ jobs:
             $OUTPUT = "dist\$NAME-windows-x86_64-v$VERSION"
             New-Item -ItemType Directory -Force -Path $OUTPUT
             Copy-Item "$BUNDLE\*" "$OUTPUT\" -Recurse -Force
+            # 隐私模式必需：turn_on_privacy 检查 exe 同目录 WindowInjection.dll，缺失则报"请安装插件"
+            Copy-Item "WindowInjection.dll" "$OUTPUT\" -Force
             Compress-Archive -Path "$OUTPUT\*" -DestinationPath "dist\$NAME-windows-x86_64-v$VERSION.zip" -Force
             Write-Host "===== $($v.variant) 完成 ====="
           }
