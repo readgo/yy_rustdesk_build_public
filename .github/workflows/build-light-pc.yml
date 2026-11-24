@@ -356,14 +356,27 @@ jobs:
       - name: Build WindowInjection.dll（隐私模式置顶窗口注入 DLL，锁上游 v0.3）
         shell: pwsh
         run: |
-          git clone https://github.com/rustdesk-org/RustDeskTempTopMostWindow RustDeskTempTopMostWindow
-          cd RustDeskTempTopMostWindow && git checkout 53b548a5398624f7149a382000397993542ad796
+          git clone --depth 1 https://github.com/rustdesk-org/RustDeskTempTopMostWindow RustDeskTempTopMostWindow
+          if ($LASTEXITCODE -ne 0) { Write-Error "clone failed"; exit 1 }
+          Push-Location RustDeskTempTopMostWindow
+          git checkout 53b548a5398624f7149a382000397993542ad796
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Format-List
           $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          if (-not $msbuild) { Write-Error "MSBuild not found"; exit 1 }
-          & $msbuild "WindowInjection/WindowInjection.vcxproj" -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
-          if ($LASTEXITCODE -ne 0) { Write-Error "WindowInjection.dll build failed"; exit 1 }
-          Copy-Item "RustDeskTempTopMostWindow/WindowInjection/x64/Release/WindowInjection.dll" "WindowInjection.dll"
-          Get-Item "WindowInjection.dll" | Format-List Name,Length
+          if (-not $msbuild) { Write-Error "MSBuild not found via vswhere"; exit 1 }
+          Write-Host "MSBuild: $msbuild"
+          & $msbuild "WindowInjection/WindowInjection.vcxproj" -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10 -m
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Write-Host "=== msbuild failed, exit $code, dump WindowInjection dir ==="
+            Get-ChildItem -Recurse WindowInjection | Select-Object -First 40 FullName | Format-Table -AutoSize
+            Pop-Location
+            exit 1
+          }
+          $dll = Get-ChildItem -Path . -Recurse -Filter WindowInjection.dll | Select-Object -First 1
+          Pop-Location
+          if (-not $dll) { Write-Error "WindowInjection.dll not found after build"; exit 1 }
+          Copy-Item $dll.FullName "$env:GITHUB_WORKSPACE\WindowInjection.dll" -Force
+          Get-Item "$env:GITHUB_WORKSPACE\WindowInjection.dll" | Format-List Name,Length
 
       - name: Build & Package per variant（串行双变体，单变体失败不阻断后续）
         shell: pwsh
